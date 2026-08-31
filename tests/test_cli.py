@@ -401,5 +401,135 @@ class SheetAndConfigTests(CliTestCase):
         self.assertIn(code, (0, 1))
 
 
+class MindfulnessTests(CliTestCase):
+    def test_pattern_listing(self):
+        output = self.assertOk("breathe", "--list")
+        self.assertIn("box", output)
+        self.assertIn("4-7-8", output)
+
+    def test_breathe_plan_default(self):
+        output = self.assertOk("breathe", "--plan")
+        self.assertIn("box (4-4-4-4)", output)
+        self.assertIn("Rounds:   6", output)
+        self.assertIn("Total: 1m 36s", output)
+
+    def test_breathe_plan_for_a_duration_picks_the_round_count(self):
+        output = self.assertOk("breathe", "4-7-8", "--for", "2m", "--plan")
+        self.assertIn("Rounds:   6", output)
+        self.assertNotIn("Rest", output)
+
+    def test_breathe_plan_rejects_a_bad_pattern(self):
+        code, output = self.run_klok("breathe", "sideways", "--plan")
+        self.assertEqual(code, 1)
+        self.assertIn("unknown pattern", output)
+
+    def test_breathe_runs_and_can_skip_recording(self):
+        self.assertOk("breathe", "0.02-0-0.02-0", "--rounds", "1", "--no-track", "-q")
+        self.assertEqual(self.ids(), [])
+
+    def test_meditate_plan_lists_the_bells(self):
+        output = self.assertOk("meditate", "20m", "--interval-bell", "5m",
+                               "--warmup", "30s", "--plan")
+        self.assertIn("Sit:      20m", output)
+        self.assertIn("5m", output)
+        self.assertIn("sheet wellbeing", output)
+
+    def test_meditate_plan_uses_the_configured_default(self):
+        self.assertOk("config", "set", "mindful.default_sit", "7m")
+        self.assertIn("Sit:      7m", self.assertOk("meditate", "--plan"))
+
+    def test_meditate_rejects_a_zero_length_sit(self):
+        code, output = self.run_klok("meditate", "0m", "--plan")
+        self.assertEqual(code, 1)
+        self.assertIn("positive", output)
+
+    def test_practice_stays_off_the_working_sheet(self):
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        self.assertOk("track", "07:00", "to", "07:20", "mindfulness", "+meditation",
+                      "--sheet", "wellbeing")
+        rows = json.loads(self.assertOk("log", ":day", "-f", "json"))
+        self.assertEqual([row["project"] for row in rows], ["acme"])
+        self.assertIn("mindfulness", self.assertOk("log", ":day", "--all-sheets"))
+
+    def test_mindful_report(self):
+        self.assertOk("track", "07:00", "to", "07:20", "mindfulness", "+meditation",
+                      "--sheet", "wellbeing")
+        self.assertOk("track", "12:00", "to", "12:05", "mindfulness", "+breathing",
+                      "--sheet", "wellbeing")
+        output = self.assertOk("mindful", ":day", "--no-chart")
+        self.assertIn("Sessions         2", output)
+        self.assertIn("Total practice   25m", output)
+        self.assertIn("1 session, 20m", output)
+        self.assertIn("Current streak   1 day", output)
+
+    def test_mindful_with_no_practice(self):
+        code, output = self.run_klok("mindful", ":day")
+        self.assertEqual(code, 1)
+        self.assertIn("No practice recorded", output)
+
+    def test_mindful_ignores_ordinary_work_on_the_practice_sheet(self):
+        self.assertOk("track", "07:00", "to", "08:00", "admin", "--sheet", "wellbeing")
+        code, _ = self.run_klok("mindful", ":day")
+        self.assertEqual(code, 1)
+
+    def test_checkin_and_mood(self):
+        self.assertOk("checkin", "--mood", "4", "--energy", "3", "--stress", "2",
+                      "after", "standup")
+        output = self.assertOk("mood", ":day")
+        self.assertIn("after standup", output)
+        self.assertIn("Mood", output)
+        self.assertIn("avg 4.0", output)
+
+    def test_checkin_needs_at_least_one_scale(self):
+        code, output = self.run_klok("checkin", "just", "a", "note")
+        self.assertEqual(code, 1)
+        self.assertIn("at least one", output)
+
+    def test_checkin_rejects_a_score_out_of_range(self):
+        code, output = self.run_klok("checkin", "--mood", "9")
+        self.assertEqual(code, 1)
+        self.assertIn("between 1 and 5", output)
+
+    def test_checkin_at_a_past_time(self):
+        self.assertOk("checkin", "--mood", "3", "--at", "09:15")
+        rows = json.loads(self.assertOk("mood", ":day", "--json"))
+        self.assertTrue(rows[0]["at"].endswith("09:15:00+00:00") or "T09:15" in rows[0]["at"])
+
+    def test_checkin_delete(self):
+        self.assertOk("checkin", "--mood", "3")
+        self.assertOk("checkin", "--delete", "@")
+        code, _ = self.run_klok("mood", ":day")
+        self.assertEqual(code, 1)
+
+    def test_mood_with_no_check_ins(self):
+        code, output = self.run_klok("mood", ":day")
+        self.assertEqual(code, 1)
+        self.assertIn("No check-ins", output)
+
+    def test_mood_compares_busy_and_light_days(self):
+        for day, mood, hours in ((25, 5, 2), (26, 5, 2), (27, 4, 3),
+                                 (28, 2, 9), (29, 2, 9), (30, 3, 8)):
+            clock = "2026-08-%d 20:00" % day
+            self.assertOk("checkin", "--mood", str(mood), clock=clock)
+            self.assertOk("track", "--from", "09:00", "-d", "%dh" % hours, "acme", clock=clock)
+        output = self.assertOk("mood", ":month")
+        self.assertIn("busier days", output)
+        self.assertIn("lighter days", output)
+
+    def test_status_suggests_a_pause_after_a_long_stretch(self):
+        self.assertOk("start", "acme", "--at", "-3h")
+        output = self.assertOk("status")
+        self.assertIn("klok breathe", output)
+
+    def test_status_stays_quiet_before_the_threshold(self):
+        self.assertOk("start", "acme", "--at", "-10m")
+        self.assertNotIn("klok breathe", self.assertOk("status"))
+
+    def test_break_nudge_can_be_switched_off(self):
+        self.assertOk("config", "set", "mindful.break_after", "")
+        self.assertOk("start", "acme", "--at", "-3h")
+        self.assertNotIn("klok breathe", self.assertOk("status"))
+
+
 if __name__ == "__main__":
     unittest.main()

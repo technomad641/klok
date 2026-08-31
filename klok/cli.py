@@ -12,6 +12,12 @@ from klok import __version__
 from klok.config import Config
 from klok.focus import ART, countdown, notify, pomodoro_plan
 from klok.formats import FORMATS, parse_import, render
+from klok.mindful import (BREATHING_TAG, MEDITATION_TAG, PATTERNS, Checkin,
+                          CheckinStore, MindfulError, breath_plan, breathe,
+                          break_due, check_score, cycle_length, daily_averages,
+                          describe_pattern, longest_streak, meditate,
+                          parse_pattern, pattern_phases, rounds_for, sit_plan,
+                          sparkline, streak)
 from klok.model import Frame, normalise_tags
 from klok.report import (Renderer, by_day, by_project, by_sheet, by_tag,
                          render_day_chart, render_gaps, render_log,
@@ -27,7 +33,8 @@ from klok.utils import Term, die, render_table
 ARCHIVE_PREFIX = "_"
 # Options whose value is a time or duration and may therefore start with "-".
 TIME_OPTIONS = {"-a", "--at", "--from", "--to", "--start", "--stop", "--now",
-                "--min", "--work", "--break", "--long-break", "--round"}
+                "--min", "--work", "--break", "--long-break", "--round",
+                "--for", "--interval-bell", "--warmup"}
 
 
 class Context:
@@ -247,6 +254,11 @@ def cmd_status(ctx: Context) -> int:
         ctx.echo("  note: %s" % frame.note)
     ctx.echo("  sheet %s  |  today %s  |  id %s" % (
         frame.sheet, format_duration(today_total), ctx.term.paint(frame.id, "grey")))
+    threshold = ctx.config.get("mindful.break_after", "")
+    if threshold and break_due(frame, parse_duration(threshold), ctx.now):
+        ctx.echo(ctx.term.paint(
+            "  You have been at this %s straight - `klok breathe` takes about a minute."
+            % format_duration(elapsed), "dim"))
     return 0
 
 
@@ -994,6 +1006,276 @@ def cmd_pomodoro(ctx: Context) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- mindfulness
+def practice_sheet(ctx: Context) -> str:
+    """Practice lives on its own sheet unless the user says otherwise."""
+    return getattr(ctx.args, "sheet", None) or ctx.config.get("mindful.sheet", "wellbeing")
+
+
+def record_practice(ctx: Context, tag: str, started: datetime, ended: datetime,
+                    note: str = "", extra_tags=()):
+    """Store a finished session as an ordinary frame, or return None."""
+    if getattr(ctx.args, "no_track", False) or not ctx.config.get_bool("mindful.track", True):
+        return None
+    if (ended - started).total_seconds() < 5:
+        return None
+    frame = Frame(start=started, stop=ended,
+                  project=ctx.config.get("mindful.project", "mindfulness"),
+                  tags=normalise_tags([tag] + list(extra_tags)),
+                  note=note or "", sheet=practice_sheet(ctx))
+    ctx.store.add(frame)
+    ctx.store.save("practice %s" % tag)
+    return frame
+
+
+def cmd_breathe(ctx: Context) -> int:
+    """A guided breathing pacer."""
+    args = ctx.args
+    if args.list:
+        rows = [[name, "-".join("%g" % value for value in values[:4]), values[4]]
+                for name, values in sorted(PATTERNS.items())]
+        print(render_table(rows, headers=["Pattern", "Counts", "What it is"],
+                           aligns=["left", "left", "left"], term=ctx.term))
+        print("\nAny counts work too: `klok breathe 4-7-8` or `klok breathe 5-2-7-2`.")
+        return 0
+
+    pattern = parse_pattern(args.pattern or (args.words[0] if args.words else None)
+                            or ctx.config.get("mindful.pattern", "box"))
+    if args.for_time:
+        rounds = rounds_for(pattern, parse_duration(args.for_time))
+    else:
+        rounds = args.rounds or ctx.config.get_int("mindful.breath_rounds", 6)
+    if rounds < 1:
+        raise MindfulError("a session needs at least one round")
+    total = cycle_length(pattern) * rounds
+
+    if args.plan:
+        ctx.echo("Pattern:  %s" % describe_pattern(pattern))
+        ctx.echo("Rounds:   %d   Cycle: %s   Total: %s"
+                 % (rounds, format_duration(cycle_length(pattern)), format_duration(total)))
+        rows = [[label, "%gs" % seconds] for _, label, seconds in pattern_phases(pattern)]
+        print(render_table(rows, aligns=["left", "right"], indent="  "))
+        ctx.echo("Steps:    %d" % len(breath_plan(pattern, rounds)))
+        return 0
+
+    started = now_local()
+    ctx.echo("%s   %s" % (ctx.term.paint("Breathing", "cyan", "bold"), describe_pattern(pattern)))
+    finished = breathe(pattern, rounds, ctx.term, quiet=args.quiet,
+                       bell=ctx.config.get_bool("focus.bell", True),
+                       notify_on_end=ctx.config.get_bool("focus.notify", True))
+    ended = now_local()
+    frame = record_practice(ctx, BREATHING_TAG, started, ended,
+                            note=args.note or pattern[4], extra_tags=args.tag or [])
+    if not finished:
+        ctx.echo("Stopped after %s." % format_duration(ended - started))
+    if frame:
+        ctx.echo("Recorded %s (%s) on sheet %s"
+                 % (describe(ctx, frame), format_duration(frame.duration(ended)), frame.sheet))
+    return 0 if finished else 130
+
+
+def cmd_meditate(ctx: Context) -> int:
+    """A timed sit, with a bell at the end and optionally along the way."""
+    args = ctx.args
+    length = parse_duration(args.for_time or args.duration
+                            or ctx.config.get("mindful.default_sit", "10m"))
+    if length.total_seconds() <= 0:
+        raise MindfulError("a sit needs a positive length")
+    interval_raw = args.interval_bell if args.interval_bell is not None else ctx.config.get("mindful.interval_bell", "")
+    interval = parse_duration(interval_raw) if interval_raw else None
+    warmup_raw = args.warmup if args.warmup is not None else ctx.config.get("mindful.warmup", "")
+    warmup = parse_duration(warmup_raw) if warmup_raw else None
+    guidance = ctx.config.get_bool("mindful.guidance", True) and not args.no_guidance
+
+    if args.plan:
+        marks = sit_plan(length, interval, warmup)
+        ctx.echo("Sit:      %s" % format_duration(length))
+        ctx.echo("Bells:    %s" % ", ".join(format_duration(timedelta(seconds=mark)) for mark in marks))
+        ctx.echo("Warm-up:  %s" % (format_duration(warmup) if warmup else "none"))
+        ctx.echo("Guidance: %s" % ("on" if guidance else "off"))
+        ctx.echo("Recorded: %s +%s on sheet %s"
+                 % (ctx.config.get("mindful.project", "mindfulness"), MEDITATION_TAG,
+                    practice_sheet(ctx)))
+        return 0
+
+    started = now_local()
+    finished = meditate(length, ctx.term, interval=interval, warmup=warmup, guidance=guidance,
+                        quiet=args.quiet, bell=ctx.config.get_bool("focus.bell", True),
+                        notify_on_end=ctx.config.get_bool("focus.notify", True))
+    ended = now_local()
+    frame = record_practice(ctx, MEDITATION_TAG, started, ended,
+                            note=args.note or "", extra_tags=args.tag or [])
+    if not finished:
+        ctx.echo("Ended early after %s." % format_duration(ended - started))
+    if frame:
+        ctx.echo("Recorded %s (%s) on sheet %s"
+                 % (describe(ctx, frame), format_duration(frame.duration(ended)), frame.sheet))
+    return 0 if finished else 130
+
+
+def cmd_checkin(ctx: Context) -> int:
+    """Note how you are doing, on three 1-5 scales."""
+    args = ctx.args
+    store = CheckinStore(ctx.config)
+    if args.delete:
+        removed = store.remove(args.delete)
+        store.save()
+        ctx.echo("Deleted check-in %s from %s"
+                 % (removed.id, removed.at.strftime("%Y-%m-%d %H:%M")))
+        return 0
+
+    mood = check_score("mood", args.mood)
+    energy = check_score("energy", args.energy)
+    stress = check_score("stress", args.stress)
+    if mood is None and energy is None and stress is None and sys.stdin.isatty():
+        mood = check_score("mood", _ask("Mood 1-5 (1 low, 5 good)"))
+        energy = check_score("energy", _ask("Energy 1-5"))
+        stress = check_score("stress", _ask("Stress 1-5 (1 calm, 5 wound up)"))
+    if mood is None and energy is None and stress is None:
+        raise MindfulError("give at least one of --mood, --energy or --stress")
+
+    checkin = Checkin(at=resolve_time(ctx, args.at), mood=mood, energy=energy, stress=stress,
+                      note=" ".join(args.words).strip(), tags=normalise_tags(args.tag or []))
+    store.add(checkin)
+    store.save()
+    parts = ["%s %d" % (name, value) for name, value in
+             (("mood", mood), ("energy", energy), ("stress", stress)) if value is not None]
+    ctx.echo("Noted %s at %s [%s]" % (", ".join(parts), checkin.at.strftime("%H:%M"),
+                                      ctx.term.paint(checkin.id, "grey")))
+    return 0
+
+
+def _ask(prompt: str):
+    try:
+        answer = input("%s: " % prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+    return answer or None
+
+
+def cmd_mood(ctx: Context) -> int:
+    """Show check-ins and how the scales have moved."""
+    start, end = ctx.range_of(":month")
+    store = CheckinStore(ctx.config)
+    checkins = store.select(start, end)
+    if getattr(ctx.args, "format", None) == "json":
+        print(json.dumps([item.to_dict() for item in checkins], indent=2, ensure_ascii=False))
+        return 0
+    if not checkins:
+        ctx.echo("No check-ins in this range. Add one with `klok checkin --mood 4`.")
+        return 1
+
+    rows = [[item.at.strftime("%Y-%m-%d"), ctx.renderer.fmt_time(item.at),
+             "" if item.mood is None else str(item.mood),
+             "" if item.energy is None else str(item.energy),
+             "" if item.stress is None else str(item.stress),
+             " ".join("+" + tag for tag in item.tags),
+             item.note, ctx.term.paint(item.id, "grey")]
+            for item in checkins]
+    print(render_table(rows, headers=["Date", "Time", "Mood", "Energy", "Stress", "Tags", "Note", "ID"],
+                       aligns=["left", "left", "right", "right", "right", "left", "left", "left"],
+                       term=ctx.term))
+
+    print("")
+    days = sorted({item.at.date() for item in checkins})
+    for field_name in ("mood", "energy", "stress"):
+        averages = daily_averages(checkins, field_name)
+        if not averages:
+            continue
+        series = [averages.get(day) for day in days]
+        values = [value for value in series if value is not None]
+        print("%-8s %s  avg %.1f" % (field_name.title(),
+                                     ctx.term.paint(sparkline(series), "cyan"),
+                                     sum(values) / len(values)))
+
+    insight = _workload_insight(ctx, checkins, days)
+    if insight:
+        print("")
+        print(ctx.term.paint(insight, "dim"))
+    return 0
+
+
+def _workload_insight(ctx: Context, checkins, days):
+    """Compare mood on heavier and lighter days.  Descriptive, not a claim."""
+    moods = daily_averages(checkins, "mood")
+    if len(moods) < 4:
+        return None
+    work_sheet = ctx.store.current_sheet
+    tracked = {}
+    for day in moods:
+        day_start = ctx.now.replace(year=day.year, month=day.month, day=day.day,
+                                    hour=0, minute=0, second=0, microsecond=0)
+        frames = ctx.store.select(day_start, day_start + timedelta(days=1),
+                                  sheet=work_sheet, now=ctx.now)
+        tracked[day] = sum((frame.duration(ctx.now) for frame in frames), timedelta(0))
+    if not any(value.total_seconds() for value in tracked.values()):
+        return None
+    ordered = sorted(tracked.values())
+    median = ordered[len(ordered) // 2]
+    heavy = [moods[day] for day in moods if tracked[day] > median]
+    light = [moods[day] for day in moods if tracked[day] <= median]
+    if len(heavy) < 2 or len(light) < 2:
+        return None
+    return ("On the %d busier days (over %s tracked) mood averaged %.1f; "
+            "on the %d lighter days, %.1f."
+            % (len(heavy), format_duration(median), sum(heavy) / len(heavy),
+               len(light), sum(light) / len(light)))
+
+
+def cmd_mindful(ctx: Context) -> int:
+    """How the practice itself is going."""
+    start, end = ctx.range_of(":month")
+    sheet = None if ctx.args.all_sheets else practice_sheet(ctx)
+    frames = ctx.store.select(start, end, sheet=sheet, now=ctx.now)
+    frames = [frame for frame in frames
+              if MEDITATION_TAG in frame.tags or BREATHING_TAG in frame.tags]
+    if not frames:
+        ctx.echo("No practice recorded in this range. Try `klok meditate 10m` or `klok breathe`.")
+        return 1
+
+    renderer = ctx.renderer
+    total = sum((renderer.duration_of(frame) for frame in frames), timedelta(0))
+    sits = [frame for frame in frames if MEDITATION_TAG in frame.tags]
+    breaths = [frame for frame in frames if BREATHING_TAG in frame.tags]
+    days = {frame.start.date() for frame in frames}
+    last = max(frames, key=lambda frame: frame.end_or(ctx.now))
+
+    rows = [
+        ["Range", "%s to %s" % (start.strftime("%Y-%m-%d"),
+                                (end - timedelta(seconds=1)).strftime("%Y-%m-%d"))],
+        ["Sessions", str(len(frames))],
+        ["Total practice", format_duration(total)],
+        ["Sitting", "%d session%s, %s" % (len(sits), "" if len(sits) == 1 else "s",
+                                          format_duration(sum((renderer.duration_of(f) for f in sits),
+                                                              timedelta(0))))],
+        ["Breathing", "%d session%s, %s" % (len(breaths), "" if len(breaths) == 1 else "s",
+                                            format_duration(sum((renderer.duration_of(f) for f in breaths),
+                                                                timedelta(0))))],
+        ["Average session", format_duration(total / len(frames))],
+        ["Days practised", str(len(days))],
+        ["Current streak", "%d day%s" % (streak(days, ctx.now.date()),
+                                         "" if streak(days, ctx.now.date()) == 1 else "s")],
+        ["Longest streak", "%d day%s" % (longest_streak(days),
+                                         "" if longest_streak(days) == 1 else "s")],
+        ["Last practice", humanize_ago(ctx.now - last.end_or(ctx.now))],
+    ]
+    print(render_table(rows, aligns=["left", "left"]))
+
+    if not ctx.args.no_chart:
+        print("")
+        print(render_day_chart(frames, renderer, start, end))
+
+    checkins = CheckinStore(ctx.config).select(start, end)
+    moods = daily_averages(checkins, "mood") if checkins else {}
+    if moods:
+        series = [moods.get(day) for day in sorted(moods)]
+        values = [value for value in series if value is not None]
+        print("")
+        print("Mood     %s  avg %.1f" % (ctx.term.paint(sparkline(series), "cyan"),
+                                         sum(values) / len(values)))
+    return 0
+
+
 # ------------------------------------------------------------------- checks
 def cmd_check(ctx: Context) -> int:
     problems = []
@@ -1029,7 +1311,8 @@ COMPLETIONS = {
 _klok_completions() {
   local commands="start stop cancel status restart switch track add stretch edit annotate tag untag
 rename move lengthen shorten fill join split delete undo log summary report chart gaps stats projects
-tags sheet sheets archive export import config where timer pomodoro check completion version"
+tags sheet sheets archive export import config where timer pomodoro breathe meditate checkin mood
+mindful check completion version"
   COMPREPLY=($(compgen -W "$commands" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
 complete -F _klok_completions klok
@@ -1040,7 +1323,8 @@ _klok() {
   local -a commands
   commands=(start stop cancel status restart switch track add stretch edit annotate tag untag rename
 move lengthen shorten fill join split delete undo log summary report chart gaps stats projects tags
-sheet sheets archive export import config where timer pomodoro check completion version)
+sheet sheets archive export import config where timer pomodoro breathe meditate checkin mood
+mindful check completion version)
   _describe 'klok command' commands
 }
 compdef _klok klok
@@ -1048,7 +1332,8 @@ compdef _klok klok
     "fish": """# klok fish completion - save as ~/.config/fish/completions/klok.fish
 for cmd in start stop cancel status restart switch track add stretch edit annotate tag untag rename \\
     move lengthen shorten fill join split delete undo log summary report chart gaps stats projects \\
-    tags sheet sheets archive export import config where timer pomodoro check completion version
+    tags sheet sheets archive export import config where timer pomodoro breathe meditate \\
+    checkin mood mindful check completion version
     complete -c klok -n __fish_use_subcommand -a $cmd
 end
 """,
@@ -1365,6 +1650,56 @@ def build_parser() -> argparse.ArgumentParser:
     pomo.add_argument("--art", choices=sorted(ART))
     pomo.add_argument("--big", action="store_true")
     pomo.add_argument("-q", "--quiet", action="store_true")
+
+    # -- mindfulness ---------------------------------------------------
+    breathe_cmd = add("breathe", "Run a guided breathing pacer.", aliases=["breath"],
+                      parents=[sheet_opts], func=cmd_breathe)
+    breathe_cmd.add_argument("words", nargs="*", metavar="PATTERN",
+                             help="a named pattern (box, calm, relax, ...) or counts like 4-7-8")
+    breathe_cmd.add_argument("--pattern", metavar="NAME|COUNTS", help="same, as a flag")
+    breathe_cmd.add_argument("--rounds", type=int, metavar="N", help="number of breaths")
+    breathe_cmd.add_argument("--for", dest="for_time", metavar="DURATION",
+                             help="breathe for this long instead of a round count")
+    breathe_cmd.add_argument("--list", action="store_true", help="list the named patterns")
+    breathe_cmd.add_argument("--plan", action="store_true", help="describe the session without running it")
+    breathe_cmd.add_argument("-q", "--quiet", action="store_true", help="no live display")
+    breathe_cmd.add_argument("-n", "--note", metavar="TEXT")
+    breathe_cmd.add_argument("-t", "--tag", action="append", metavar="TAG")
+    breathe_cmd.add_argument("--no-track", action="store_true", help="do not record the session")
+
+    meditate_cmd = add("meditate", "Sit for a set time, with a bell at the end.",
+                       aliases=["sit", "zen"], parents=[sheet_opts], func=cmd_meditate)
+    meditate_cmd.add_argument("duration", nargs="?", metavar="DURATION",
+                              help="how long to sit (default: mindful.default_sit)")
+    meditate_cmd.add_argument("--for", dest="for_time", metavar="DURATION")
+    meditate_cmd.add_argument("--interval-bell", metavar="DURATION", default=None,
+                              help="ring a bell this often during the sit")
+    meditate_cmd.add_argument("--warmup", metavar="DURATION", default=None,
+                              help="a settling bell this far in")
+    meditate_cmd.add_argument("--no-guidance", action="store_true", help="no prompts, just the bells")
+    meditate_cmd.add_argument("--plan", action="store_true", help="describe the sit without running it")
+    meditate_cmd.add_argument("-q", "--quiet", action="store_true")
+    meditate_cmd.add_argument("-n", "--note", metavar="TEXT")
+    meditate_cmd.add_argument("-t", "--tag", action="append", metavar="TAG")
+    meditate_cmd.add_argument("--no-track", action="store_true")
+
+    checkin_cmd = add("checkin", "Note how you are doing on three 1-5 scales.",
+                      aliases=["feel"], func=cmd_checkin)
+    checkin_cmd.add_argument("words", nargs="*", metavar="NOTE")
+    checkin_cmd.add_argument("--mood", metavar="1-5")
+    checkin_cmd.add_argument("--energy", metavar="1-5")
+    checkin_cmd.add_argument("--stress", metavar="1-5")
+    checkin_cmd.add_argument("-a", "--at", metavar="TIME")
+    checkin_cmd.add_argument("-t", "--tag", action="append", metavar="TAG")
+    checkin_cmd.add_argument("--delete", metavar="ID", help="remove a check-in")
+
+    mood_cmd = add("mood", "Show check-ins and how the scales have moved.",
+                   parents=[range_opts], func=cmd_mood)
+    mood_cmd.add_argument("--json", dest="format", action="store_const", const="json")
+
+    mindful_cmd = add("mindful", "How the practice itself is going.", aliases=["practice"],
+                      parents=[range_opts, sheet_opts], func=cmd_mindful)
+    mindful_cmd.add_argument("--no-chart", action="store_true", help="skip the per-day chart")
 
     add("check", "Look for overlaps and other suspicious entries.", aliases=["sanity", "doctor"],
         func=cmd_check)

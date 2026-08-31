@@ -37,6 +37,22 @@ DEFAULTS = {
         # Comma separated YYYY-MM-DD dates treated like excluded days.
         "holidays": "",
     },
+    "mindful": {
+        # Practice is recorded here so it never lands in a client's report.
+        "project": "mindfulness",
+        "sheet": "wellbeing",
+        "track": "true",
+        # Default breathing pattern and length.
+        "pattern": "box",
+        "breath_rounds": "6",
+        # Default sit, and how often the interval bell rings during it.
+        "default_sit": "10m",
+        "interval_bell": "",
+        "warmup": "",
+        "guidance": "true",
+        # `klok status` suggests a pause once a stretch of work runs this long.
+        "break_after": "90m",
+    },
     "focus": {
         "work": "25m",
         "break": "5m",
@@ -83,6 +99,10 @@ class Config:
     @property
     def undo_path(self) -> Path:
         return self.home / "undo.jsonl"
+
+    @property
+    def checkins_path(self) -> Path:
+        return self.home / "checkins.jsonl"
 
     def ensure_home(self) -> None:
         self.home.mkdir(parents=True, exist_ok=True)

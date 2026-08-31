@@ -1,8 +1,9 @@
 # klok
 
 A command-line time tracker that pulls together the features people actually
-use from Timetrap, Timewarrior, Watson, utt, Bartib, Helm and friends — in one
-tool, with a plaintext backend and no dependencies beyond Python 3.9.
+use from Timetrap, Timewarrior, Watson, utt, Bartib, Helm and friends — plus
+breathing, sitting and mood check-ins — in one tool, with a plaintext backend
+and no dependencies beyond Python 3.9.
 
 ```console
 $ klok start acme +api -n "auth endpoint"
@@ -88,6 +89,10 @@ klok takes the useful parts of each and keeps a single, boring data file.
 | **Helm / arttime** | Minimal countdown timer | `klok timer 25m --big --art coffee` |
 | | Desktop notification + bell | automatic; `focus.notify`, `focus.bell` |
 | **Focusd** | Focus sessions | `klok pomodoro acme +deep --rounds 4` — recorded as real entries |
+| **feeling** | Mood tracking over time | `klok checkin --mood 4 --energy 3`, `klok mood :month` |
+| *(new)* | Guided breathing | `klok breathe box`, `klok breathe 4-7-8 --for 5m` |
+| *(new)* | Timed sitting with bells | `klok meditate 20m --interval-bell 5m` |
+| *(new)* | Practice streaks | `klok mindful :month` |
 
 ## Commands
 
@@ -196,6 +201,81 @@ up in `report` alongside everything else. Notifications go through
 `notify-send`, `terminal-notifier` or `osascript` when one is available, and
 always ring the terminal bell.
 
+### Mindfulness and meditation
+
+Practice is tracked like everything else — but on its own sheet (`wellbeing`
+by default), so a month of sitting never turns up in a client's invoice.
+
+#### Breathing
+
+```sh
+klok breathe                       # the configured default, six rounds of box breathing
+klok breathe 4-7-8                 # any counts: in-hold-out, or in-hold-out-hold
+klok breathe calm --for 5m         # a named pattern, for a length instead of a round count
+klok breathe --list                # what the named patterns are
+klok breathe box --plan            # describe the session without running it
+```
+
+A pacer fills and empties a bar in time with the phase, naming each one and
+counting it down. `Ctrl-C` stops it and still records what you did.
+
+| Pattern | Counts | |
+| --- | --- | --- |
+| `box` | 4-4-4-4 | equal counts all round |
+| `calm` | 4-0-6-0 | longer out-breath than in-breath |
+| `coherent` | 5.5-0-5.5-0 | about five and a half breaths a minute |
+| `relax` | 4-7-8-0 | the 4-7-8 count |
+| `triangle` | 4-4-4-0 | no pause at the bottom |
+| `even` | 5-0-5-0 | plain and symmetrical |
+
+Custom counts work anywhere a name does: two counts are in and out
+(`4-6`), three add the hold after the in-breath (`4-7-8`), four set every
+phase (`5-2-7-2`).
+
+#### Sitting
+
+```sh
+klok meditate                      # mindful.default_sit, ten minutes out of the box
+klok meditate 20m --interval-bell 5m
+klok meditate 30m --warmup 30s     # a settling bell before the sit proper
+klok meditate 15m --no-guidance    # bells only, no prompts
+klok meditate 20m --plan           # when the bells will land
+```
+
+A progress line, a bell at the end (and at each interval), and — unless you
+turn them off — a few short prompts along the way. Sits are recorded as
+`mindfulness +meditation`; breathing as `mindfulness +breathing`.
+
+#### Check-ins
+
+```sh
+klok checkin --mood 4 --energy 3 --stress 2 after standup
+klok checkin --mood 2 --at 09:15 -t monday
+klok checkin                       # prompts for the three scales when run in a terminal
+klok mood :month                   # the entries, plus a trend line per scale
+klok mood --json
+klok checkin --delete @            # or by id prefix
+```
+
+Three optional 1–5 scales (mood, energy, stress) and a free-text note. `klok
+mood` renders each scale as a sparkline with its average, and — once there are
+enough days to compare — notes how mood sat on your busier days versus your
+lighter ones. That is an observation about two averages, not a claim about
+cause.
+
+#### How the practice is going
+
+```sh
+klok mindful :month                # sessions, time, averages, streaks, last practice
+klok mindful :year --no-chart
+```
+
+#### Break nudge
+
+Once a single unbroken stretch of work passes `mindful.break_after` (90
+minutes by default), `klok status` says so and suggests a minute of breathing.
+Set the key to empty to switch it off.
+
 ### Configuration
 
 ```sh
@@ -220,6 +300,16 @@ klok config edit
 | `exclusions.holidays` | – | comma-separated `YYYY-MM-DD` dates |
 | `focus.work` / `focus.break` / `focus.long_break` / `focus.rounds` | `25m` / `5m` / `15m` / `4` | pomodoro defaults |
 | `focus.notify` / `focus.bell` / `focus.track` | `true` | timer behaviour |
+| `mindful.project` | `mindfulness` | project practice is recorded against |
+| `mindful.sheet` | `wellbeing` | sheet practice is recorded on |
+| `mindful.track` | `true` | record practice at all |
+| `mindful.pattern` | `box` | default breathing pattern |
+| `mindful.breath_rounds` | `6` | default number of breaths |
+| `mindful.default_sit` | `10m` | default length of `klok meditate` |
+| `mindful.interval_bell` | – | default interval bell during a sit |
+| `mindful.warmup` | – | default settling bell |
+| `mindful.guidance` | `true` | show prompts during a sit |
+| `mindful.break_after` | `90m` | when `klok status` suggests a pause (empty = never) |
 
 ### Where the data lives
 
@@ -232,6 +322,7 @@ else `~/.local/share/klok`):
 
 ```
 frames.jsonl   one JSON object per line, sorted by start time
+checkins.jsonl mood/energy/stress check-ins, same shape
 config.ini     configuration
 state.json     which sheet is active
 undo.jsonl     the last 100 states, for klok undo
@@ -271,8 +362,9 @@ klok completion fish > ~/.config/fish/completions/klok.fish
 cd klok && PYTHONPATH=. python3 -m unittest discover -s tests -t .
 ```
 
-107 tests covering the time parser, the store (including undo, locking,
-overlaps and gaps), the exporters, and every command end to end.
+162 tests covering the time parser, the store (including undo, locking,
+overlaps and gaps), the breathing and sitting timers (driven by an injected
+clock, so the suite stays fast), the exporters, and every command end to end.
 
 ## What it deliberately does not do
 
@@ -283,6 +375,9 @@ overlaps and gaps), the exporters, and every command end to end.
   ground Watson's `sync` does, without a service to run.
 - **No plugin/extension API.** The JSON and CSV exports are the extension
   point.
+- **No health claims.** The breathing patterns and sitting timers are a
+  pacer and a bell. klok is a tracker, not advice, and not a substitute for
+  care from someone qualified to give it.
 
 ## Licence
 
