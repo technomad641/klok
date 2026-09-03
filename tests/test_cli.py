@@ -32,6 +32,17 @@ class CliTestCase(unittest.TestCase):
         self.assertEqual(code, 0, "expected success, got %d:\n%s" % (code, output))
         return output
 
+    def run_klok_exit(self, *args, clock=None):
+        """For argparse-level outcomes (--help, a bad subcommand): these call
+        sys.exit() directly rather than returning a code, so they have to be
+        caught as SystemExit instead of read as a return value."""
+        argv = ["--home", str(self.home), "--no-color", "--now", clock or self.clock] + [str(a) for a in args]
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            with self.assertRaises(SystemExit) as caught:
+                main(argv)
+        return caught.exception.code, out.getvalue() + err.getvalue()
+
     def ids(self, *args):
         output = self.assertOk("log", ":all", "--all-sheets", "-f", "json", *args)
         return [row["id"] for row in json.loads(output)]
@@ -529,6 +540,58 @@ class MindfulnessTests(CliTestCase):
         self.assertOk("config", "set", "mindful.break_after", "")
         self.assertOk("start", "acme", "--at", "-3h")
         self.assertNotIn("klok breathe", self.assertOk("status"))
+
+
+class HelpAndErrorsTests(CliTestCase):
+    def test_top_level_help_is_grouped_with_a_quick_start(self):
+        code, output = self.run_klok_exit("--help")
+        self.assertEqual(code, 0)
+        self.assertIn("Quick start:", output)
+        self.assertIn("klok breathe", output)
+        for heading in ("Tracking:", "Fixing entries:", "Reporting:",
+                        "Sheets & config:", "Focus & mindfulness:", "Other:"):
+            self.assertIn(heading, output)
+
+    def test_top_level_help_does_not_dump_a_wall_of_choices(self):
+        # The old argparse default listed every command and alias inline;
+        # the grouped rundown replaces that, one command per line instead.
+        code, output = self.run_klok_exit("--help")
+        self.assertEqual(code, 0)
+        self.assertNotIn("choose from", output)
+
+    def test_a_single_commands_help_still_works(self):
+        code, output = self.run_klok_exit("start", "--help")
+        self.assertEqual(code, 0)
+        self.assertIn("Start tracking a project", output)
+
+    def test_typo_suggests_the_close_command(self):
+        code, output = self.run_klok_exit("statuss")
+        self.assertEqual(code, 2)
+        self.assertIn("did you mean 'status'", output)
+
+    def test_unrelated_word_gets_a_short_error_not_a_wall_of_choices(self):
+        code, output = self.run_klok_exit("frobnicate")
+        self.assertEqual(code, 2)
+        self.assertIn("unknown command 'frobnicate'", output)
+        self.assertNotIn("choose from", output)
+
+    def test_an_alias_typo_is_still_recognised_as_a_real_command(self):
+        # "zen" is an alias of meditate, not a typo needing a suggestion.
+        code, output = self.run_klok_exit("zen", "--help")
+        self.assertEqual(code, 0)
+
+    def test_cold_status_offers_a_starter_hint(self):
+        code, output = self.run_klok("status")
+        self.assertEqual(code, 1)
+        self.assertIn("Nothing tracked yet.", output)
+        self.assertIn("klok start acme +api", output)
+
+    def test_status_after_some_history_is_terser(self):
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        code, output = self.run_klok("status")
+        self.assertEqual(code, 1)
+        self.assertIn("Nothing running.", output)
+        self.assertNotIn("Nothing tracked yet", output)
 
 
 if __name__ == "__main__":

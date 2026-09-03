@@ -94,6 +94,48 @@ klok takes the useful parts of each and keeps a single, boring data file.
 | *(new)* | Timed sitting with bells | `klok meditate 20m --interval-bell 5m` |
 | *(new)* | Practice streaks | `klok mindful :month` |
 
+## Finding your way around
+
+`klok --help` doesn't dump all 70-odd commands and aliases in one
+alphabetical wall — it opens with a five-line quick start, then groups the
+rest (Tracking, Fixing entries, Reporting, Sheets & config, Focus &
+mindfulness) so the shape of the tool is visible at a glance. Each
+command's own `--help` still has the full detail — `klok start --help`,
+`klok breathe --help`, and so on.
+
+```console
+$ klok --help
+Quick start:
+  klok start acme +api       start tracking, tag it
+  klok stop                  stop the clock
+  klok status                what's running right now
+  klok report :week          where the week went
+  klok breathe               sixty seconds, box breathing
+
+Tracking:
+  start   Start tracking a project now (or at a given time).  (in, on)
+  stop    Stop the running entry.  (out, off)
+  ...
+```
+
+A typo in a command name gets a one-line correction instead of the default
+list of all seventy choices:
+
+```console
+$ klok statuss
+klok: unknown command 'statuss' - did you mean 'status'?
+Run `klok --help` for the full list.
+```
+
+And a brand new install says what to do next, rather than just "nothing
+running":
+
+```console
+$ klok status
+Nothing tracked yet.
+  Try `klok start acme +api` to begin, or `klok --help` for the full picture.
+```
+
 ## Commands
 
 ### Tracking
@@ -362,7 +404,7 @@ klok completion fish > ~/.config/fish/completions/klok.fish
 cd klok && PYTHONPATH=. python3 -m unittest discover -s tests -t .
 ```
 
-162 tests covering the time parser, the store (including undo, locking,
+170 tests covering the time parser, the store (including undo, locking,
 overlaps and gaps), the breathing and sitting timers (driven by an injected
 clock, so the suite stays fast), the exporters, and every command end to end.
 

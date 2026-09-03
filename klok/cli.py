@@ -1,8 +1,10 @@
 """Command line entry point."""
 
 import argparse
+import difflib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -238,7 +240,13 @@ def cmd_status(ctx: Context) -> int:
             ctx.echo("Nothing running. Last: %s ended %s." %
                      (describe(ctx, last), humanize_ago(ctx.now - last.end_or(ctx.now))))
         elif not ctx.args.quiet:
-            ctx.echo("Nothing running.")
+            if ctx.store.frames:
+                ctx.echo("Nothing running.")
+            else:
+                ctx.echo("Nothing tracked yet.")
+                ctx.echo(ctx.term.paint(
+                    "  Try `klok start acme +api` to begin, or `klok --help` for the full picture.",
+                    "dim"))
         return 1
     elapsed = frame.duration(ctx.now)
     today_start = ctx.now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1373,8 +1381,6 @@ def _preprocess(argv):
     keeps working by rewriting the removal marker to ``~`` before argparse
     mistakes it for an option.
     """
-    import re
-
     position = _subcommand_index(argv)
     tag_command = position is not None and argv[position] in ("tag", "untag")
     out, index = [], 0
@@ -1393,11 +1399,67 @@ def _preprocess(argv):
     return out
 
 
+GROUP_ORDER = ["Tracking", "Fixing entries", "Reporting", "Sheets & config",
+              "Focus & mindfulness", "Other"]
+
+QUICK_START = """\
+Quick start:
+  klok start acme +api       start tracking, tag it
+  klok stop                  stop the clock
+  klok status                what's running right now
+  klok report :week          where the week went
+  klok breathe               sixty seconds, box breathing
+"""
+
+
+class KlokArgumentParser(argparse.ArgumentParser):
+    """Suggests a close match for a mistyped subcommand instead of just failing."""
+
+    command_names = ()
+
+    def error(self, message):
+        match = re.search(r"argument COMMAND: invalid choice: '([^']+)'", message)
+        if match:
+            bad = match.group(1)
+            guesses = difflib.get_close_matches(bad, self.command_names, n=1) if self.command_names else []
+            hint = " - did you mean %r?" % guesses[0] if guesses else ""
+            # Argparse's default message for this dumps every command and
+            # alias on one line; that wall of text helps no one, so replace
+            # it with a short pointer at the grouped list in --help instead.
+            self.exit(2, "klok: unknown command %r%s\nRun `klok --help` for the full list.\n" % (bad, hint))
+        super().error(message)
+
+
+def _format_command_group(entries):
+    width = min(max((len(name) for name, _, _ in entries), default=8), 12)
+    lines = []
+    for name, aliases, help_text in entries:
+        line = "  %-*s %s" % (width, name, help_text)
+        if aliases:
+            line += "  (%s)" % ", ".join(aliases)
+        lines.append(line)
+    return lines
+
+
+def _build_epilog(groups) -> str:
+    lines = [QUICK_START]
+    for group_name in GROUP_ORDER:
+        entries = groups.get(group_name) or []
+        if not entries:
+            continue
+        lines.append("%s:" % group_name)
+        lines.extend(_format_command_group(entries))
+        lines.append("")
+    lines.append("Full reference for one command: `klok <command> --help`")
+    lines.append("Time and duration syntax, config keys, exports: see README.md")
+    return "\n".join(lines).rstrip("\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = KlokArgumentParser(
         prog="klok",
         description="Track where your time goes, from the command line.",
-        epilog="Run `klok <command> --help` for the options of a single command.")
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--home", metavar="DIR", help="data directory (default: $KLOK_HOME or XDG data dir)")
     parser.add_argument("--color", choices=["auto", "always", "never"], help="colour output")
     parser.add_argument("--no-color", action="store_true", help="disable colour")
@@ -1429,12 +1491,20 @@ def build_parser() -> argparse.ArgumentParser:
     format_opts = argparse.ArgumentParser(add_help=False)
     format_opts.add_argument("-f", "--format", choices=list(FORMATS), help="output format (default: text)")
 
-    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND",
+                                       help="see the grouped command list below")
+    groups = {name: [] for name in GROUP_ORDER}
+    current_group = ["Tracking"]
 
     def add(name, help_text, aliases=(), parents=(), func=None, **kwargs):
-        sub = subparsers.add_parser(name, help=help_text, aliases=list(aliases),
+        # `help=` is deliberately omitted: passing it would make argparse dump
+        # every one of these into a single wall-of-text "positional arguments"
+        # block. The curated, grouped rundown in the epilog replaces it, and
+        # each command's own `--help` still shows help_text via `description`.
+        sub = subparsers.add_parser(name, aliases=list(aliases),
                                     parents=list(parents), description=help_text, **kwargs)
         sub.set_defaults(func=func, command=name)
+        groups[current_group[0]].append((name, list(aliases), help_text))
         return sub
 
     # -- tracking ------------------------------------------------------
@@ -1494,6 +1564,7 @@ def build_parser() -> argparse.ArgumentParser:
     stretch.add_argument("ref", nargs="?", metavar="ID")
     stretch.add_argument("--by", metavar="DURATION", help="stretch by a fixed amount instead")
 
+    current_group[0] = "Fixing entries"
     # -- editing -------------------------------------------------------
     edit = add("edit", "Edit entries in $EDITOR, or change fields directly with flags.",
                parents=[sheet_opts], func=cmd_edit)
@@ -1564,6 +1635,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("undo", "Undo the last change to the timesheet.", func=cmd_undo)
 
+    current_group[0] = "Reporting"
     # -- reporting -----------------------------------------------------
     log = add("log", "List entries day by day.", aliases=["display", "list"],
               parents=[range_opts, filter_opts, sheet_opts, format_opts], func=cmd_log)
@@ -1608,6 +1680,7 @@ def build_parser() -> argparse.ArgumentParser:
     import_cmd.add_argument("--sheet", metavar="NAME", help="put everything on this sheet")
     import_cmd.set_defaults(all_sheets=False)
 
+    current_group[0] = "Sheets & config"
     # -- sheets and config ---------------------------------------------
     sheet_cmd = add("sheet", "Show or switch the active sheet ('-' goes back).", func=cmd_sheet)
     sheet_cmd.add_argument("name", nargs="?", metavar="NAME")
@@ -1625,6 +1698,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("where", "Print the paths klok reads and writes.", aliases=["paths"], func=cmd_where)
 
+    current_group[0] = "Focus & mindfulness"
     # -- focus ---------------------------------------------------------
     timer = add("timer", "Run a countdown timer with a notification at the end.",
                 parents=[sheet_opts], func=cmd_timer)
@@ -1701,6 +1775,7 @@ def build_parser() -> argparse.ArgumentParser:
                       parents=[range_opts, sheet_opts], func=cmd_mindful)
     mindful_cmd.add_argument("--no-chart", action="store_true", help="skip the per-day chart")
 
+    current_group[0] = "Other"
     add("check", "Look for overlaps and other suspicious entries.", aliases=["sanity", "doctor"],
         func=cmd_check)
 
@@ -1708,6 +1783,9 @@ def build_parser() -> argparse.ArgumentParser:
     completion.add_argument("shell", choices=sorted(COMPLETIONS))
 
     add("version", "Print the version.", func=cmd_version)
+
+    parser.epilog = _build_epilog(groups)
+    parser.command_names = list(subparsers.choices)
     return parser
 
 
