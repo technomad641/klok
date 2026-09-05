@@ -1,5 +1,8 @@
 # klok
 
+[![CI](https://github.com/technomad641/klok/actions/workflows/ci.yml/badge.svg)](https://github.com/technomad641/klok/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A command-line time tracker that pulls together the features people actually
 use from Timetrap, Timewarrior, Watson, utt, Bartib, Helm and friends — plus
 breathing, sitting and mood check-ins — in one tool, with a plaintext backend
@@ -423,4 +426,4 @@ clock, so the suite stays fast), the exporters, and every command end to end.
 
 ## Licence
 
-MIT.
+MIT. See [LICENSE](LICENSE).
