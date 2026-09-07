@@ -1,0 +1,61 @@
+name: Publish to PyPI
+
+# Runs when a GitHub Release is published, or on demand for a dry run.
+# Authenticates to PyPI via Trusted Publishing (OIDC) - no API token is
+# stored in this repo or anywhere else. Set this up once at
+# https://pypi.org/manage/account/publishing/ before the first release:
+# PyPI project name "klok-cli", owner "technomad641", repo "klok",
+# workflow "publish.yml", environment "pypi".
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and check only - skip the actual PyPI upload"
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: Build sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run the test suite before packaging anything
+        run: python -m unittest discover -s tests -t .
+
+      - name: Install the build tooling
+        run: python -m pip install --upgrade build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Check the built distributions
+        run: twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Upload to PyPI
+    needs: build
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # required for Trusted Publishing - no token needed
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -37,10 +37,20 @@ Total: 3h 55m
 ## Install
 
 ```sh
+pip install klok-cli          # or: pipx install klok-cli
+```
+
+The PyPI package is `klok-cli` ("klok" itself is an unrelated, empty
+placeholder someone else registered) but the installed command is plain
+`klok`. No dependencies.
+
+To install from a checkout instead of PyPI:
+
+```sh
 pip install --user .          # or: pipx install .
 ```
 
-No dependencies. It also runs straight from a checkout:
+It also runs straight from a checkout with no install at all:
 
 ```sh
 PYTHONPATH=. python3 -m klok status

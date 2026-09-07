@@ -3,7 +3,10 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "klok"
+# The PyPI distribution name is "klok-cli" because "klok" is already taken
+# by an unrelated, empty placeholder package. The installed command is
+# still plain `klok` - see [project.scripts] below.
+name = "klok-cli"
 version = "1.0.0"
 description = "A batteries-included command-line time tracker with a plaintext backend."
 readme = "README.md"
