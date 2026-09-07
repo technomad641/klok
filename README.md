@@ -1,6 +1,7 @@
 # klok
 
 [![CI](https://github.com/technomad641/klok/actions/workflows/ci.yml/badge.svg)](https://github.com/technomad641/klok/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/klok-cli.svg)](https://pypi.org/project/klok-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A command-line time tracker that pulls together the features people actually
