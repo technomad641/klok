@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/technomad641/klok/actions/workflows/ci.yml/badge.svg)](https://github.com/technomad641/klok/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/klok-cli.svg)](https://pypi.org/project/klok-cli/)
+[![Python versions](https://img.shields.io/pypi/pyversions/klok-cli.svg)](https://pypi.org/project/klok-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A command-line time tracker that pulls together the features people actually
@@ -43,7 +44,8 @@ pip install klok-cli          # or: pipx install klok-cli
 
 The PyPI package is `klok-cli` ("klok" itself is an unrelated, empty
 placeholder someone else registered) but the installed command is plain
-`klok`. No dependencies.
+`klok`. No dependencies, pure standard library — CI runs the full test
+suite on Linux, macOS and Windows across Python 3.9 through 3.13.
 
 To install from a checkout instead of PyPI:
 
