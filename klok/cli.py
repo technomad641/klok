@@ -1,13 +1,11 @@
 """Command line entry point."""
 
 import argparse
-import difflib
 import json
 import os
 import re
 import subprocess
 import sys
-import tempfile
 from datetime import datetime, timedelta
 
 from klok import __version__
@@ -418,6 +416,8 @@ def _editor(ctx: Context):
 
 
 def _open_editor(ctx: Context, text: str, suffix: str = ".json") -> str:
+    import tempfile
+
     handle, path = tempfile.mkstemp(prefix="klok-", suffix=suffix)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
@@ -945,7 +945,7 @@ def cmd_config(ctx: Context) -> int:
 def cmd_where(ctx: Context) -> int:
     rows = [["data", str(ctx.config.home)], ["frames", str(ctx.config.frames_path)],
             ["config", str(ctx.config.path)], ["state", str(ctx.config.state_path)],
-            ["undo", str(ctx.config.undo_path)]]
+            ["undo", str(ctx.config.undo_dir)]]
     print(render_table(rows, aligns=["left", "left"]))
     return 0
 
@@ -1420,6 +1420,8 @@ class KlokArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         match = re.search(r"argument COMMAND: invalid choice: '([^']+)'", message)
         if match:
+            import difflib
+
             bad = match.group(1)
             guesses = difflib.get_close_matches(bad, self.command_names, n=1) if self.command_names else []
             hint = " - did you mean %r?" % guesses[0] if guesses else ""

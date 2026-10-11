@@ -5,8 +5,6 @@ countdown, a big clock, a nudge when the time is up - and it feeds the
 same frame store as everything else so focus sessions show up in reports.
 """
 
-import shutil
-import subprocess
 import sys
 import time
 from datetime import timedelta
@@ -71,6 +69,9 @@ def notify(title: str, message: str, enabled: bool = True, bell: bool = True) ->
             pass
     if not enabled:
         return
+    import shutil
+    import subprocess
+
     commands = []
     if shutil.which("notify-send"):
         commands.append(["notify-send", title, message])

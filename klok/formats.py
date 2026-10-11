@@ -4,8 +4,6 @@ These are what let klok hand its data to a spreadsheet, an invoicing
 script or ``hledger`` without anyone writing a parser.
 """
 
-import csv
-import io
 import json
 from datetime import timedelta
 
@@ -37,6 +35,9 @@ def to_json(frames, now, indent: int = 2) -> str:
 
 
 def to_csv(frames, now, delimiter: str = ",") -> str:
+    import csv
+    import io
+
     buffer = io.StringIO()
     fields = ["id", "sheet", "project", "tags", "note", "start", "stop", "seconds", "hours"]
     writer = csv.DictWriter(buffer, fieldnames=fields, delimiter=delimiter, lineterminator="\n")
@@ -152,6 +153,9 @@ def parse_import(text: str):
         return [Frame.from_dict(item) for item in json.loads(text)]
     if text.startswith("{"):
         return [Frame.from_dict(json.loads(line)) for line in text.splitlines() if line.strip()]
+    import csv
+    import io
+
     reader = csv.DictReader(io.StringIO(text))
     frames = []
     for row in reader:

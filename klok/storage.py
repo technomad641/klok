@@ -65,6 +65,9 @@ class Store:
         self.config = config
         self.path = config.frames_path
         self._frames: Optional[List[Frame]] = None
+        # The raw, non-blank lines currently on disk, kept so a mutation can
+        # snapshot the previous state for undo without re-reading the file.
+        self._disk_lines: Optional[List[str]] = None
         self._pending_label = None
 
     # -- loading / saving ----------------------------------------------
@@ -76,22 +79,29 @@ class Store:
 
     def _load(self) -> List[Frame]:
         if not self.path.exists():
+            self._disk_lines = []
             return []
         frames = []
+        raw = []
         with self.path.open("r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, 1):
-                line = line.strip()
-                if not line or line.startswith("#"):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                raw.append(line.rstrip("\n"))
+                if stripped.startswith("#"):
                     continue
                 try:
-                    frames.append(Frame.from_dict(json.loads(line)))
+                    frames.append(Frame.from_dict(json.loads(stripped)))
                 except (ValueError, KeyError) as exc:
                     raise StoreError("%s line %d is not a valid frame: %s" % (self.path, number, exc))
+        self._disk_lines = raw
         frames.sort(key=lambda frame: frame.start)
         return frames
 
     def reload(self) -> None:
         self._frames = None
+        self._disk_lines = None
 
     def save(self, label: str = "") -> None:
         """Write frames back, snapshotting the previous file for undo first."""
@@ -99,50 +109,97 @@ class Store:
         with FileLock(self.path):
             self._snapshot(label or self._pending_label or "change")
             tmp = self.path.with_suffix(".jsonl.tmp")
+            written = []
             with tmp.open("w", encoding="utf-8") as handle:
                 for frame in sorted(self.frames, key=lambda item: item.start):
-                    handle.write(json.dumps(frame.to_dict(), ensure_ascii=False) + "\n")
+                    line = json.dumps(frame.to_dict(), ensure_ascii=False)
+                    handle.write(line + "\n")
+                    written.append(line)
             os.replace(tmp, self.path)
+        # Disk now holds exactly these lines; remember them so a second save in
+        # the same process can snapshot without another read.
+        self._disk_lines = written
         self._pending_label = None
 
     # -- undo -----------------------------------------------------------
+    # Each mutation drops one snapshot file into ``undo.d/``; the newest has
+    # the highest sequence number.  This keeps a mutation's undo cost at one
+    # small write plus a directory listing, instead of rewriting a file that
+    # held every snapshot.
     def _snapshot(self, label: str) -> None:
-        previous = []
-        if self.path.exists():
+        if self._disk_lines is not None:
+            previous = list(self._disk_lines)
+        elif self.path.exists():
             with self.path.open("r", encoding="utf-8") as handle:
                 previous = [line.rstrip("\n") for line in handle if line.strip()]
+        else:
+            previous = []
+        self._migrate_legacy_undo()
         entry = {"at": now_local().isoformat(), "label": label, "lines": previous}
-        undo_path = self.config.undo_path
-        history = self._read_undo()
-        history.append(entry)
-        history = history[-UNDO_LIMIT:]
-        tmp = undo_path.with_suffix(".jsonl.tmp")
-        with tmp.open("w", encoding="utf-8") as handle:
-            for item in history:
-                handle.write(json.dumps(item, ensure_ascii=False) + "\n")
-        os.replace(tmp, undo_path)
+        undo_dir = self.config.undo_dir
+        undo_dir.mkdir(parents=True, exist_ok=True)
+        existing = self._snapshot_files()
+        seq = existing[-1][0] + 1 if existing else 1
+        path = undo_dir / ("%012d.json" % seq)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        existing.append((seq, path))
+        for _, stale in existing[:-UNDO_LIMIT]:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
 
-    def _read_undo(self) -> List[dict]:
-        path = self.config.undo_path
-        if not path.exists():
+    def _snapshot_files(self):
+        """Snapshot files as ``(sequence, path)`` pairs, oldest first."""
+        undo_dir = self.config.undo_dir
+        if not undo_dir.exists():
             return []
+        items = []
+        for child in undo_dir.iterdir():
+            if child.suffix == ".json" and child.stem.isdigit():
+                items.append((int(child.stem), child))
+        items.sort()
+        return items
+
+    def _migrate_legacy_undo(self) -> None:
+        """One-time move of a pre-1.1 single-file undo stack into ``undo.d/``."""
+        legacy = self.config.home / "undo.jsonl"
+        if not legacy.exists() or self._snapshot_files():
+            return
         entries = []
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if line:
+        try:
+            with legacy.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
                     try:
                         entries.append(json.loads(line))
                     except ValueError:
                         continue
-        return entries
+        except OSError:
+            return
+        undo_dir = self.config.undo_dir
+        undo_dir.mkdir(parents=True, exist_ok=True)
+        for seq, entry in enumerate(entries[-UNDO_LIMIT:], 1):
+            (undo_dir / ("%012d.json" % seq)).write_text(
+                json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+        legacy.unlink(missing_ok=True)
 
     def undo(self) -> Optional[str]:
         """Restore the previous state.  Returns the label that was undone."""
-        history = self._read_undo()
-        if not history:
+        self._migrate_legacy_undo()
+        files = self._snapshot_files()
+        if not files:
             return None
-        entry = history.pop()
+        _, path = files[-1]
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            path.unlink(missing_ok=True)
+            return None
         self.config.ensure_home()
         with FileLock(self.path):
             tmp = self.path.with_suffix(".jsonl.tmp")
@@ -150,11 +207,7 @@ class Store:
                 for line in entry.get("lines", []):
                     handle.write(line + "\n")
             os.replace(tmp, self.path)
-            undo_tmp = self.config.undo_path.with_suffix(".jsonl.tmp")
-            with undo_tmp.open("w", encoding="utf-8") as handle:
-                for item in history:
-                    handle.write(json.dumps(item, ensure_ascii=False) + "\n")
-            os.replace(undo_tmp, self.config.undo_path)
+            path.unlink(missing_ok=True)
         self.reload()
         return entry.get("label", "change")
 

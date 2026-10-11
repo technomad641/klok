@@ -97,8 +97,8 @@ class Config:
         return self.home / "state.json"
 
     @property
-    def undo_path(self) -> Path:
-        return self.home / "undo.jsonl"
+    def undo_dir(self) -> Path:
+        return self.home / "undo.d"
 
     @property
     def checkins_path(self) -> Path:
