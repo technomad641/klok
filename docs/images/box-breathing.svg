@@ -33,14 +33,14 @@
   </g>
 
   <!-- the travelling marker -->
-  <circle r="7" fill="#8aa6d6" stroke="#15151a" stroke-width="2.5">
+  <circle cx="110" cy="230" r="7" fill="#8aa6d6" stroke="#15151a" stroke-width="2.5">
     <animate attributeName="cx" dur="16s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.25;0.5;0.75;1" values="110;110;250;250;110"/>
     <animate attributeName="cy" dur="16s" repeatCount="indefinite" calcMode="linear" keyTimes="0;0.25;0.5;0.75;1" values="230;90;90;230;230"/>
   </circle>
 
   <!-- the phase word -->
   <g text-anchor="middle" fill="#ece9e2" font-family="Georgia, 'Times New Roman', serif" font-size="21">
-    <text x="180" y="300" opacity="0">Breathe in<animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;0.25;1" values="1;0;0"/></text>
+    <text x="180" y="300" opacity="1">Breathe in<animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;0.25;1" values="1;0;0"/></text>
     <text x="180" y="300" opacity="0">Hold<animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;0.25;0.5;1" values="0;1;0;0"/></text>
     <text x="180" y="300" opacity="0">Breathe out<animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;0.5;0.75;1" values="0;1;0;0"/></text>
     <text x="180" y="300" opacity="0">Rest<animate attributeName="opacity" dur="16s" repeatCount="indefinite" calcMode="discrete" keyTimes="0;0.75;1" values="0;1;0"/></text>

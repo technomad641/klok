@@ -9,7 +9,7 @@
 that tracks not just where your time went, but how it felt.**
 
 <p align="center">
-  <img src="docs/images/terminal-demo.svg" alt="Animated: klok start writing +deep, status, stop, and a report for today, running in a terminal" width="680">
+  <img src="docs/images/terminal-demo.svg" alt="klok in a terminal: start writing +deep, check status, stop, and a report for today" width="680">
 </p>
 
 klok brings together the features people actually use from Timetrap, Timewarrior,
@@ -95,7 +95,7 @@ patterns (box, 4-7-8, coherent), meditation rings bells on a schedule, and
 check-ins capture mood, energy and stress on a 1–5 scale.
 
 <p align="center">
-  <img src="docs/images/box-breathing.svg" alt="Animated box-breathing guide: a marker traces a square through inhale, hold, exhale and rest while a circle expands and contracts" width="340">
+  <img src="docs/images/box-breathing.svg" alt="Box-breathing guide: a marker traces a square through inhale, hold, exhale and rest around a breathing circle" width="340">
 </p>
 
 ```sh
