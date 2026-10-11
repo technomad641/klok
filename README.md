@@ -14,6 +14,10 @@ and no dependencies beyond Python 3.9.
   <img src="docs/images/hero.png" alt="klok in the terminal: start a tagged entry, check status, stop the clock" width="609">
 </p>
 
+<p align="center">
+  <img src="docs/images/terminal-demo.svg" alt="Animated: klok start writing +deep, status, stop, and a report for today, running in a terminal" width="680">
+</p>
+
 ## Install
 
 ```sh
@@ -263,6 +267,10 @@ klok breathe box --plan            # describe the session without running it
 A pacer fills and empties a bar in time with the phase, naming each one and
 counting it down. `Ctrl-C` stops it and still records what you did.
 
+<p align="center">
+  <img src="docs/images/box-breathing.svg" alt="Animated box-breathing guide: a marker traces a square through inhale, hold, exhale and rest while a circle expands and contracts" width="340">
+</p>
+
 | Pattern | Counts | |
 | --- | --- | --- |
 | `box` | 4-4-4-4 | equal counts all round |
@@ -399,6 +407,27 @@ klok import august.json                                  # JSON, JSONL or CSV
 source <(klok completion bash)     # or zsh
 klok completion fish > ~/.config/fish/completions/klok.fish
 ```
+
+## A web dashboard (prototype)
+
+Because the whole backend is just `frames.jsonl` and `checkins.jsonl`, it is easy
+to put a richer surface on top of it. **Hours & Feelings** is a prototype
+dashboard that reads both streams and shows not only where the time went, but how
+it felt — joining each check-in to whatever you were tracking at that moment.
+
+It includes an energy–time map (every project placed by hours and energy, so the
+quietly draining work sinks to the bottom-right), a deep-work streak, a mood
+calendar, trend lines, and a box-breathing pause built on the same patterns as
+`klok breathe`.
+
+The prototype is a single self-contained HTML file with demo data — open it in a
+browser:
+
+[`docs/dashboard/hours-and-feelings.html`](docs/dashboard/hours-and-feelings.html)
+
+It is a design prototype, not yet wired to your real data; the natural next step
+is a `klok serve` command built on the standard-library HTTP server, keeping the
+no-dependency promise.
 
 ## Tests
 

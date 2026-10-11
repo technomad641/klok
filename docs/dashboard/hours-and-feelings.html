@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hours & Feelings</title>
+<meta name="description" content="A klok dashboard that shows not just where your time went, but how it felt.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* ---- layout concept: single-column calm instrument panel; one color language (feeling ramp) tints every block of time; serif = feeling, mono = measurement ---- */
+:root{
+  /* light — "day paper" */
+  --plane:      #efede7;   /* page plane */
+  --surface:    #faf9f5;   /* card surface */
+  --surface-2:  #f3f1ea;   /* inset / track */
+  --ink:        #201e19;   /* primary text (warm near-black) */
+  --ink-2:      #57544c;   /* secondary */
+  --muted:      #8d8a80;   /* axis / captions */
+  --line:       #e2dfd4;   /* hairline */
+  --line-2:     #d6d2c5;
+  --accent:     #3a567f;   /* instrument accent — hours / magnitude / chrome */
+  --accent-2:   #2d4568;
+  --clay:       #b8473a;   /* stress hue */
+  --teal:       #2f8f6b;   /* mood hue */
+  --tip-bg:     #201e19;
+  --tip-fg:     #faf9f5;
+  --shadow:     0 1px 2px rgba(32,30,25,.05), 0 8px 28px rgba(32,30,25,.06);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --plane:     #100f0d;
+    --surface:   #1a1917;
+    --surface-2: #232220;
+    --ink:       #f0eee7;
+    --ink-2:     #bbb6aa;
+    --muted:     #8f8c82;
+    --line:      #2b2a27;
+    --line-2:    #35332f;
+    --accent:    #8aa6d6;
+    --accent-2:  #a7bde3;
+    --clay:      #d9685a;
+    --teal:      #46a885;
+    --tip-bg:    #f0eee7;
+    --tip-fg:    #1a1917;
+    --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 32px rgba(0,0,0,.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --plane:     #100f0d;
+  --surface:   #1a1917;
+  --surface-2: #232220;
+  --ink:       #f0eee7;
+  --ink-2:     #bbb6aa;
+  --muted:     #8f8c82;
+  --line:      #2b2a27;
+  --line-2:    #35332f;
+  --accent:    #8aa6d6;
+  --accent-2:  #a7bde3;
+  --clay:      #d9685a;
+  --teal:      #46a885;
+  --tip-bg:    #f0eee7;
+  --tip-fg:    #1a1917;
+  --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 32px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+
+*{ box-sizing:border-box; }
+body{
+  margin:0; background:var(--plane); color:var(--ink);
+  font-family:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+.wrap{ max-width:1080px; margin:0 auto; padding-inline:20px; padding-block:0 72px; }
+.mono{ font-family:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric:tabular-nums; }
+.serif{ font-family:"Fraunces", Georgia, "Times New Roman", serif; }
+
+a{ color:var(--accent); }
+h1,h2,h3{ margin:0; text-wrap:balance; font-family:"Fraunces", Georgia, serif; font-weight:500; letter-spacing:-.01em; }
+
+/* ---------- header ---------- */
+header.top{
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:30;
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  padding:14px 20px; margin-bottom:8px;
+  background:color-mix(in srgb, var(--plane) 86%, transparent);
+  backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+}
+.brand{ display:flex; align-items:baseline; gap:12px; min-width:0; }
+.logo{ font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:19px; letter-spacing:.02em; color:var(--ink); }
+.logo b{ color:var(--teal); font-weight:600; }
+.brand .cmd{ font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.brand .cmd .caret{ color:var(--teal); }
+.controls{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px; }
+.seg button{
+  font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.01em;
+  border:0; background:transparent; color:var(--ink-2); padding:5px 12px; border-radius:999px; cursor:pointer;
+}
+.seg button[aria-pressed="true"]{ background:var(--surface); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.icon-btn{
+  width:34px; height:34px; display:grid; place-items:center; cursor:pointer;
+  background:var(--surface-2); border:1px solid var(--line); border-radius:999px; color:var(--ink-2); padding:0;
+}
+.icon-btn:hover{ color:var(--ink); }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+/* ---------- hero ---------- */
+.hero{ padding:26px 0 8px; }
+.hero h1{ font-size:clamp(30px,6vw,52px); line-height:1.04; letter-spacing:-.02em; }
+.hero h1 em{ font-style:italic; color:var(--teal); }
+.lede{ margin:18px 0 0; max-width:60ch; color:var(--ink-2); font-size:clamp(15px,2.2vw,18px); line-height:1.5; }
+.lede strong{ color:var(--ink); font-weight:600; }
+
+/* ---------- stat tiles ---------- */
+.tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:26px; }
+.tile{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 16px 14px; box-shadow:var(--shadow); min-width:0; }
+.tile .k{ font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.06em; text-transform:lowercase; color:var(--muted); }
+.tile .v{ font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:clamp(22px,3.3vw,30px); margin-top:6px; line-height:1; color:var(--ink); }
+.tile .v small{ font-size:.5em; color:var(--muted); font-weight:400; margin-left:3px; }
+.tile .sub{ font-size:12px; color:var(--ink-2); margin-top:7px; min-height:16px; }
+.tile .spark{ margin-top:8px; height:22px; display:block; width:100%; }
+
+/* ---------- section + cards ---------- */
+section{ margin-top:40px; }
+.sec-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:14px; }
+.sec-head h2{ font-size:clamp(20px,3vw,26px); }
+.sec-head p{ margin:4px 0 0; color:var(--ink-2); font-size:13.5px; max-width:52ch; }
+.sec-head .hint{ font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); white-space:nowrap; }
+.card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:var(--shadow); }
+
+/* ---------- bubble (energy–time map) ---------- */
+.map-wrap{ position:relative; }
+.map-wrap svg{ width:100%; height:auto; display:block; }
+.quad-note{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:14px; }
+.quad-note div{ font-size:12px; color:var(--ink-2); }
+.quad-note b{ display:block; font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.04em; color:var(--ink); margin-bottom:2px; }
+.quad-note .q::before{ content:""; display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+
+/* ---------- projects table ---------- */
+table.feel{ width:100%; border-collapse:collapse; }
+table.feel th{ text-align:left; font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:11px; letter-spacing:.05em; text-transform:lowercase; color:var(--muted); padding:0 10px 10px; border-bottom:1px solid var(--line); }
+table.feel th.num, table.feel td.num{ text-align:right; }
+table.feel td{ padding:11px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+table.feel tr:last-child td{ border-bottom:0; }
+.pname{ font-family:"IBM Plex Mono",monospace; font-weight:500; color:var(--ink); display:flex; align-items:center; gap:8px; }
+.pname .dot{ width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+.pname .prac{ font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); border:1px solid var(--line-2); border-radius:4px; padding:1px 5px; }
+.hbar{ position:relative; height:8px; background:var(--surface-2); border-radius:6px; overflow:hidden; min-width:60px; }
+.hbar i{ position:absolute; inset:0 auto 0 0; background:var(--accent); border-radius:6px; }
+.hrs{ font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--ink); }
+.chip{ display:inline-flex; align-items:center; justify-content:center; min-width:30px; font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:500; color:#fff; border-radius:6px; padding:3px 7px; }
+.chip.ink{ color:var(--ink); }
+
+/* ---------- deep-work streak ---------- */
+.streak{ display:grid; grid-template-columns:minmax(170px,auto) 1fr; gap:28px; align-items:center; }
+.streak-left{ min-width:0; }
+.big{ display:flex; align-items:baseline; gap:10px; }
+.flame{ fill:var(--accent); align-self:center; margin-bottom:6px; }
+.streak .num{ font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:clamp(46px,10vw,76px); line-height:.85; color:var(--ink); }
+.num-label{ font-family:"IBM Plex Mono",monospace; font-size:15px; color:var(--muted); }
+.streak-best{ font-size:12.5px; color:var(--ink-2); margin-top:12px; }
+.streak-stats{ display:flex; gap:26px; margin-top:18px; }
+.streak-stats .k{ font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.05em; color:var(--muted); }
+.streak-stats .sv{ font-family:"IBM Plex Mono",monospace; font-size:18px; font-weight:500; margin-top:3px; color:var(--ink); }
+.strip{ display:flex; gap:4px; flex-wrap:wrap; }
+.strip .d{ width:15px; height:30px; border-radius:5px; background:var(--surface-2); border:1px solid var(--line); transition:transform .1s ease; }
+.strip .d.hit{ background:var(--accent); border-color:var(--accent); }
+.strip .d.today{ outline:2px solid var(--accent); outline-offset:2px; }
+.strip .d:hover{ transform:translateY(-2px); }
+.strip-cap{ font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); margin-top:11px; }
+@media (max-width:760px){ .streak{ grid-template-columns:1fr; gap:22px; } }
+
+/* ---------- heatmap ---------- */
+.heat{ display:flex; gap:18px; align-items:flex-start; flex-wrap:wrap; }
+.heat-grid{ display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,1fr); gap:4px; }
+.heat-grid .cell{ width:15px; height:15px; border-radius:4px; background:var(--surface-2); border:1px solid transparent; }
+.heat-grid .cell.empty{ background:transparent; border:1px solid var(--line); }
+.heat-side{ font-size:12.5px; color:var(--ink-2); max-width:34ch; }
+.heat-legend{ display:flex; align-items:center; gap:7px; margin-top:12px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); }
+.heat-legend .sw{ display:flex; gap:3px; }
+.heat-legend .sw i{ width:14px; height:14px; border-radius:3px; }
+.dow{ display:grid; grid-template-rows:repeat(7,1fr); gap:4px; margin-right:2px; }
+.dow span{ font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); height:15px; line-height:15px; }
+
+/* ---------- trends (small multiples) ---------- */
+.trend-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.trend{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px 14px 10px; box-shadow:var(--shadow); min-width:0; }
+.trend .th{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.trend .th b{ font-family:"Fraunces",serif; font-weight:500; font-size:16px; }
+.trend .th .now{ font-family:"IBM Plex Mono",monospace; font-size:17px; font-weight:500; }
+.trend .cap{ font-size:11.5px; color:var(--muted); margin-top:1px; }
+.trend svg{ width:100%; height:auto; display:block; margin-top:8px; }
+
+/* ---------- day timeline ---------- */
+.tl-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.tl-head .d{ font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--ink-2); }
+.timeline svg{ width:100%; height:auto; display:block; }
+.tl-legend{ display:flex; flex-wrap:wrap; gap:7px 16px; margin-top:12px; font-size:12px; color:var(--ink-2); }
+.tl-legend span{ display:inline-flex; align-items:center; gap:6px; font-family:"IBM Plex Mono",monospace; font-size:11.5px; }
+.tl-legend span i{ width:10px; height:10px; border-radius:3px; }
+
+/* ---------- breathing pause ---------- */
+.breathe-card{ display:flex; flex-direction:column; align-items:center; gap:20px; padding:36px 20px 30px; }
+.orb-wrap{ position:relative; width:min(260px,72vw); aspect-ratio:1; display:grid; place-items:center; }
+.orb-ring{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.orb-ring .track{ fill:none; stroke:var(--line); stroke-width:2.5; }
+.orb-ring .prog{ fill:none; stroke:var(--accent); stroke-width:3; stroke-linecap:round; transform:rotate(-90deg); transform-origin:110px 110px; }
+.orb-ring .sq-track{ fill:none; stroke:var(--line); stroke-width:2.5; }
+.orb-ring .marker{ fill:var(--accent); stroke:var(--surface); stroke-width:2; }
+.orb-ring .sq-label{ fill:var(--muted); font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.03em; }
+.pattern-desc{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted); text-align:center; margin-top:-4px; }
+.orb{ width:60%; aspect-ratio:1; border-radius:50%;
+  background:radial-gradient(circle at 36% 32%, color-mix(in srgb, var(--accent) 48%, #ffffff) 0%, var(--accent) 72%);
+  box-shadow:0 0 55px -6px var(--accent); opacity:.94; transform:scale(.66); }
+.b-now{ text-align:center; min-height:34px; }
+.b-now .phase{ font-family:"Fraunces",serif; font-weight:500; font-size:22px; color:var(--ink); }
+.b-now .count{ font-family:"IBM Plex Mono",monospace; font-size:14px; color:var(--muted); margin-left:8px; }
+.breathe-controls{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center; }
+.b-begin{ font-family:"IBM Plex Mono",monospace; font-size:14px; letter-spacing:.02em; background:var(--accent); color:#fff; border:0; border-radius:999px; padding:11px 28px; cursor:pointer; }
+.b-begin:hover{ filter:brightness(1.06); }
+.pattern-seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px; }
+.pattern-seg button{ font-family:"IBM Plex Mono",monospace; font-size:12px; border:0; background:transparent; color:var(--ink-2); padding:6px 14px; border-radius:999px; cursor:pointer; }
+.pattern-seg button[aria-pressed="true"]{ background:var(--surface); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.breathe-guide{ font-family:"Fraunces",serif; font-style:italic; font-size:16px; line-height:1.5; color:var(--ink-2); text-align:center; max-width:42ch; min-height:24px; }
+@media (prefers-reduced-motion:reduce){ .orb{ transform:scale(.82) !important; } }
+
+/* ---------- footer ---------- */
+footer{ margin-top:52px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12.5px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+footer .mono{ color:var(--ink-2); }
+footer .badge{ font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px solid var(--line-2); border-radius:5px; padding:2px 7px; color:var(--ink-2); }
+
+/* ---------- tooltip ---------- */
+#tip{
+  position:fixed; z-index:100; pointer-events:none; opacity:0; transform:translateY(2px);
+  background:var(--tip-bg); color:var(--tip-fg); font-family:"IBM Plex Mono",monospace; font-size:12px;
+  padding:7px 10px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.25); max-width:240px; line-height:1.45;
+  transition:opacity .12s ease;
+}
+#tip.on{ opacity:1; }
+#tip .t-t{ font-weight:600; }
+#tip .t-m{ opacity:.78; }
+
+.hoverable{ cursor:default; transition:opacity .12s ease; }
+.svgtip{ cursor:default; }
+
+/* ---------- responsive ---------- */
+@media (max-width:760px){
+  .tiles{ grid-template-columns:repeat(2,1fr); }
+  .trend-grid{ grid-template-columns:1fr; }
+  .quad-note{ grid-template-columns:repeat(2,1fr); }
+  .brand .cmd{ display:none; }
+}
+@media (max-width:440px){
+  .wrap{ padding-inline:16px; }
+  header.top{ padding:12px 16px; }
+  .sec-head{ flex-direction:column; align-items:flex-start; }
+  .sec-head .hint{ display:none; }
+  table.feel .col-hide{ display:none; }
+}
+@media (prefers-reduced-motion:reduce){
+  *{ transition:none !important; animation:none !important; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">k<b>l</b>ok</span>
+    <span class="cmd"><span class="caret">$</span> klok dashboard --since "4 weeks ago"</span>
+  </div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Time range">
+      <button id="r-week" aria-pressed="false">this week</button>
+      <button id="r-month" aria-pressed="true">4 weeks</button>
+    </div>
+    <button class="icon-btn" id="theme" aria-label="Toggle light and dark theme" title="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" id="theme-ico"></svg>
+    </button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero">
+    <h1>Where your time went<br>&mdash; and <em>how it felt</em>.</h1>
+    <p class="lede" id="lede">&nbsp;</p>
+  </div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section id="map-sec">
+    <div class="sec-head">
+      <div>
+        <h2>The energy&ndash;time map</h2>
+        <p>Every project placed by how much time it took and how alive it made you feel. The things worth protecting float up and right; what's quietly draining you sinks down and right.</p>
+      </div>
+      <div class="hint">x: hours &middot; y: energy &middot; size: sessions</div>
+    </div>
+    <div class="card">
+      <div class="map-wrap" id="map"></div>
+      <div class="quad-note">
+        <div><b>Protect</b><span class="q">Energizing, and you give it real time. Guard this.</span></div>
+        <div><b>Sparks</b><span class="q">Energizing but rare. Room to grow.</span></div>
+        <div><b>Fillers</b><span class="q">Low energy, little time. Mostly harmless.</span></div>
+        <div><b>Drains</b><span class="q">Low energy, lots of time. The place to look first.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="proj-sec">
+    <div class="sec-head">
+      <div>
+        <h2>How your projects feel</h2>
+        <p>Time comes from your tracked frames; mood, energy and stress come from check-ins logged while you were on each thing.</p>
+      </div>
+      <div class="hint">1&ndash;5 scale</div>
+    </div>
+    <div class="card" style="padding:12px 8px;">
+      <table class="feel" id="ptable"></table>
+    </div>
+  </section>
+
+  <section id="streak-sec">
+    <div class="sec-head">
+      <div>
+        <h2>Deep-work streak</h2>
+        <p>Days in a row you protected at least 90 focused minutes of making &mdash; on klok, writing or acme. Short sessions, email and meetings don't count.</p>
+      </div>
+      <div class="hint">goal: 90m / day</div>
+    </div>
+    <div class="card">
+      <div class="streak">
+        <div class="streak-left">
+          <div class="big">
+            <svg class="flame" width="30" height="40" viewBox="0 0 24 32" aria-hidden="true"><path d="M12 1C9 7 4 9 4 17a8 8 0 0 0 16 0c0-4-2-6-3-8-1 2-2 3-3 3 0-5-1-8-2-11z"/></svg>
+            <span class="num" id="streak-num">0</span>
+            <span class="num-label" id="streak-days">days</span>
+          </div>
+          <div class="streak-best" id="streak-best">longest run: 0 days</div>
+          <div class="streak-stats">
+            <div><div class="k">deep this range</div><div class="sv" id="streak-hours">0m</div></div>
+            <div><div class="k">of tracked time</div><div class="sv" id="streak-share">0%</div></div>
+          </div>
+        </div>
+        <div class="streak-right">
+          <div class="strip" id="streak-strip"></div>
+          <div class="strip-cap">each mark is a day in range &middot; filled = goal met</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="heat-sec">
+    <div class="sec-head">
+      <div>
+        <h2>Six weeks, by mood</h2>
+        <p>One square per day. Colour is the day's average mood; the stronger the square, the more you tracked.</p>
+      </div>
+      <div class="hint">last 42 days</div>
+    </div>
+    <div class="card">
+      <div class="heat">
+        <div style="display:flex;">
+          <div class="dow" id="dow"></div>
+          <div class="heat-grid" id="heatgrid"></div>
+        </div>
+        <div class="heat-side">
+          <div id="heat-copy">&nbsp;</div>
+          <div class="heat-legend">
+            <span>low</span>
+            <span class="sw" id="heat-leg"></span>
+            <span>high</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="trend-sec">
+    <div class="sec-head">
+      <div>
+        <h2>The week's weather</h2>
+        <p>How mood, energy and stress moved across the selected range.</p>
+      </div>
+      <div class="hint">daily average</div>
+    </div>
+    <div class="trend-grid" id="trends"></div>
+  </section>
+
+  <section id="tl-sec">
+    <div class="sec-head">
+      <div>
+        <h2>A day, frame by frame</h2>
+        <p>Your most recent full day. Each block is a tracked frame, tinted by how that work tends to feel; dots are the check-ins you logged along the way.</p>
+      </div>
+      <div class="hint" id="tl-date"></div>
+    </div>
+    <div class="card timeline">
+      <div id="timeline"></div>
+      <div class="tl-legend" id="tl-legend"></div>
+    </div>
+  </section>
+
+  <section id="breathe-sec">
+    <div class="sec-head">
+      <div>
+        <h2>One breath before you move</h2>
+        <p>You've seen where the hours went. Before you close the tab, sit for a minute. The guide sets the pace &mdash; in through the nose, out through the mouth.</p>
+      </div>
+      <div class="hint" id="b-hint">box &middot; 4&middot;4&middot;4&middot;4</div>
+    </div>
+    <div class="card breathe-card">
+      <div class="orb-wrap">
+        <svg class="orb-ring" viewBox="0 0 220 220" aria-hidden="true">
+          <circle class="track" id="b-circ-track" cx="110" cy="110" r="100"></circle>
+          <circle class="prog" id="b-ring" cx="110" cy="110" r="100" stroke-dasharray="628.3" stroke-dashoffset="628.3"></circle>
+          <rect class="sq-track" id="b-square" x="20" y="20" width="180" height="180" rx="12"></rect>
+          <g id="b-sqlabels">
+            <text class="sq-label" x="11" y="114" text-anchor="end">in</text>
+            <text class="sq-label" x="110" y="13" text-anchor="middle">hold</text>
+            <text class="sq-label" x="209" y="114" text-anchor="start">out</text>
+            <text class="sq-label" x="110" y="217" text-anchor="middle">rest</text>
+          </g>
+          <circle class="marker" id="b-marker" cx="20" cy="200" r="7"></circle>
+        </svg>
+        <div class="orb" id="b-orb"></div>
+      </div>
+      <div class="b-now"><span class="phase" id="b-phase">Ready when you are</span><span class="count" id="b-count"></span></div>
+      <div class="breathe-controls">
+        <button class="b-begin" id="b-toggle">Begin</button>
+        <div class="pattern-seg" role="group" aria-label="Breathing pattern">
+          <button data-pat="box" aria-pressed="true">box</button>
+          <button data-pat="coherent" aria-pressed="false">coherent</button>
+          <button data-pat="relax" aria-pressed="false">4-7-8</button>
+        </div>
+      </div>
+      <div class="pattern-desc" id="b-desc">Equal counts all round &mdash; steady, and easy to hold on to.</div>
+      <div class="breathe-guide" id="b-guide">Nothing to solve for the next little while.</div>
+    </div>
+  </section>
+
+  <footer>
+    <span class="badge">prototype</span>
+    <span>Demo data, generated to show the idea at its best.</span>
+    <span class="mono">Built on <b>klok</b> &mdash; a zero-dependency plaintext CLI time tracker.</span>
+  </footer>
+</div>
+
+<div id="tip" role="status" aria-live="off"></div>
+
+<script>
+"use strict";
+/* ========================================================================
+   Hours & Feelings — a klok dashboard prototype
+   Demo data is generated deterministically, then aggregated exactly the way
+   klok would: frames give you time, check-ins give you feeling, and the two
+   are joined in time.
+   ======================================================================== */
+
+/* ---- tiny deterministic RNG so the demo is stable across reloads ---- */
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+/* ---- fixed "now" so the calendar is sensible ---- */
+const NOW = new Date(2026,9,11,19,24,0); // Sat 11 Oct 2026, 19:24
+const DAY = 86400000;
+function startOfDay(d){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()); }
+function setHM(d,h,m){ return new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,m); }
+
+/* ---- projects: label, sheet, and the feeling they tend to carry ---- */
+const PROJECTS = {
+  klok:       {label:"klok",       sheet:"default", energy:4.5, mood:4.4, stress:1.8, tags:["code"],            practice:false},
+  writing:    {label:"writing",    sheet:"default", energy:4.0, mood:4.1, stress:2.2, tags:["deep"],            practice:false},
+  acme:       {label:"acme",        sheet:"default", energy:3.2, mood:3.3, stress:2.9, tags:["client","bill"],  practice:false},
+  admin:      {label:"admin",      sheet:"default", energy:2.5, mood:2.7, stress:2.6, tags:["ops"],             practice:false},
+  email:      {label:"email",      sheet:"default", energy:2.1, mood:2.4, stress:3.3, tags:["comms"],           practice:false},
+  meetings:   {label:"meetings",   sheet:"default", energy:2.3, mood:2.5, stress:3.9, tags:["meeting"],         practice:false},
+  meditation: {label:"meditation", sheet:"mind",    energy:4.2, mood:4.7, stress:1.3, tags:["meditation"],      practice:true},
+};
+const ORDER = ["klok","writing","acme","admin","email","meetings","meditation"];
+
+/* deep work = focused making, in long-enough sessions, toward a daily goal */
+const DEEP_KEYS = ["klok","writing","acme"];
+const DEEP_MIN  = 25*60;   // a session must run this long to count
+const DEEP_GOAL = 90*60;   // a day "hits" at this much deep time
+
+/* ---- generate ~42 days of frames + check-ins ---- */
+function clampScore(m,rng){ const n=(rng()+rng()+rng()-1.5); return Math.max(1,Math.min(5,Math.round(m+n*0.9))); }
+function makeData(){
+  const rng = mulberry32(20261011);
+  const frames=[], checkins=[];
+  const base = startOfDay(NOW);
+  for(let off=41; off>=0; off--){
+    const date = new Date(base.getTime()-off*DAY);
+    const wd = date.getDay(); // 0 Sun .. 6 Sat
+    const weekend = (wd===0||wd===6);
+    let t = setHM(date, 7, 10+Math.floor(rng()*45));
+    const block = (key, mins, {gap=0, checkinP=0}={}) => {
+      const meta = PROJECTS[key];
+      const start = new Date(t);
+      const stop  = new Date(t.getTime()+mins*60000);
+      frames.push({start,stop,key,project:meta.label,sheet:meta.sheet,tags:meta.tags.slice()});
+      if(rng()<checkinP){
+        const at = new Date(start.getTime()+mins*60000*(0.25+rng()*0.55));
+        checkins.push({at, mood:clampScore(meta.mood,rng), energy:clampScore(meta.energy,rng), stress:clampScore(meta.stress,rng), key});
+      }
+      t = new Date(stop.getTime()+gap*60000);
+    };
+    if(rng() < (weekend?0.72:0.46)) block("meditation", 10+Math.floor(rng()*13), {gap:15+rng()*25, checkinP:0.85});
+    if(weekend){
+      if(rng()<0.88) block("klok",    60+Math.floor(rng()*75), {gap:30+rng()*70, checkinP:0.72});
+      if(rng()<0.55) block("writing", 45+Math.floor(rng()*55), {gap:40+rng()*90, checkinP:0.62});
+      if(rng()<0.40) block("admin",   20+Math.floor(rng()*30), {gap:30+rng()*40, checkinP:0.30});
+      if(rng()<0.62) block("klok",    50+Math.floor(rng()*65), {gap:20, checkinP:0.62});
+    } else {
+      t = setHM(date, 9, 15+Math.floor(rng()*35));
+      if(rng()<0.55) block("email",    15+Math.floor(rng()*25), {gap:8,  checkinP:0.42});
+      if(rng()<0.88) block("meetings", 18+Math.floor(rng()*22), {gap:12+rng()*18, checkinP:0.55});
+      if(rng()<0.92) block("acme",     60+Math.floor(rng()*85), {gap:12+rng()*28, checkinP:0.70});
+      if(rng()<0.50) block("email",    15+Math.floor(rng()*25), {gap:10, checkinP:0.42});
+      t = new Date(t.getTime()+(40+rng()*45)*60000); // lunch
+      if(rng()<0.62) block("meetings", 30+Math.floor(rng()*40), {gap:12+rng()*18, checkinP:0.58});
+      if(rng()<0.82) block("acme",     50+Math.floor(rng()*75), {gap:18+rng()*32, checkinP:0.60});
+      if(rng()<0.52) block("writing",  40+Math.floor(rng()*45), {gap:18, checkinP:0.60});
+      if(rng()<0.42) block("admin",    20+Math.floor(rng()*30), {gap:18, checkinP:0.30});
+      if(rng()<0.38) block("email",    15+Math.floor(rng()*20), {gap:10, checkinP:0.42});
+      t = setHM(date, 20, Math.floor(rng()*45));
+      if(rng()<0.52) block("klok",     45+Math.floor(rng()*70), {gap:10, checkinP:0.70});
+    }
+  }
+  frames.sort((a,b)=>a.start-b.start);
+  checkins.sort((a,b)=>a.at-b.at);
+  return {frames,checkins};
+}
+const DATA = makeData();
+
+/* ---- aggregation helpers ---- */
+function windowRange(mode){ const end=NOW; const days = mode==="week"?7:28; return {from:new Date(startOfDay(end).getTime()-(days-1)*DAY), to:new Date(end.getTime()+1)}; }
+function framesIn(r){ return DATA.frames.filter(f=> f.start>=r.from && f.start<r.to); }
+function checkinsIn(r){ return DATA.checkins.filter(c=> c.at>=r.from && c.at<r.to); }
+function dur(f){ return (f.stop-f.start)/1000; }
+function fmtDur(sec){ const h=Math.floor(sec/3600), m=Math.round((sec%3600)/60); if(h&&m) return h+"h "+m+"m"; if(h) return h+"h"; return m+"m"; }
+function fmtHrsShort(sec){ return (sec/3600).toFixed(1); }
+
+function aggregate(mode){
+  const r = windowRange(mode);
+  const frames = framesIn(r), checks = checkinsIn(r);
+  const perProj = {};
+  for(const key of ORDER) perProj[key] = {key, label:PROJECTS[key].label, practice:PROJECTS[key].practice, sec:0, mood:[], energy:[], stress:[], sessions:0};
+  for(const f of frames){ perProj[f.key].sec += dur(f); perProj[f.key].sessions++; }
+  for(const c of checks){ const p=perProj[c.key]; if(p){ p.mood.push(c.mood); p.energy.push(c.energy); p.stress.push(c.stress); } }
+  const avg = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : null;
+  const rows = ORDER.map(k=>{ const p=perProj[k]; return {...p, hours:p.sec/3600, aMood:avg(p.mood), aEnergy:avg(p.energy), aStress:avg(p.stress), n:p.mood.length}; }).filter(p=>p.sec>0);
+  rows.sort((a,b)=>b.sec-a.sec);
+  const totalSec = rows.reduce((s,p)=>s+p.sec,0);
+  const allMood = avg(checks.map(c=>c.mood)), allEnergy = avg(checks.map(c=>c.energy)), allStress = avg(checks.map(c=>c.stress));
+  return {range:r, mode, rows, totalSec, projects:rows.length, checkins:checks.length, allMood, allEnergy, allStress, frames, checks};
+}
+
+/* ---- daily series over a range ---- */
+function dailySeries(r, checks){
+  const byDay = {};
+  for(const c of checks){ const k=+startOfDay(c.at); (byDay[k]=byDay[k]||[]).push(c); }
+  const days=[]; const start=startOfDay(r.from); const n=Math.round((r.to-start)/DAY);
+  for(let i=0;i<n;i++){ const d=new Date(start.getTime()+i*DAY); const cs=byDay[+d]||[]; const a=f=>cs.length?cs.reduce((s,x)=>s+x[f],0)/cs.length:null; days.push({date:d, mood:a("mood"), energy:a("energy"), stress:a("stress"), has:cs.length>0}); }
+  return days;
+}
+
+/* ================= colour: the feeling ramp ================= */
+const RAMP = {
+  light:["#b8473a","#cf8a5e","#b0ab9f","#5f9e79","#2f8f6b"],
+  dark: ["#cf5a4b","#d99a6a","#6f6a60","#6cae86","#3fa57e"],
+};
+function curTheme(){ const a=document.documentElement.getAttribute("data-theme"); if(a) return a; return window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"; }
+function hx(h){ h=h.replace("#",""); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function toHex(a){ return "#"+a.map(v=>Math.round(v).toString(16).padStart(2,"0")).join(""); }
+function feeling(v){
+  if(v==null) return "var(--surface-2)";
+  v=Math.max(1,Math.min(5,v));
+  const stops=RAMP[curTheme()];
+  const x=(v-1)/4*(stops.length-1); const i=Math.min(stops.length-2,Math.floor(x)); const f=x-i;
+  const a=hx(stops[i]), b=hx(stops[i+1]);
+  return toHex([a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f]);
+}
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+/* pick legible text colour for a given solid background hex */
+function textOn(hex){ if(!hex||hex[0]!=="#") return "#201e19"; const [r,g,b]=hx(hex); const L=(0.299*r+0.587*g+0.114*b)/255; return L>0.56?"#201e19":"#ffffff"; }
+
+/* ================= tooltip ================= */
+const tip=document.getElementById("tip");
+function showTip(x,y,title,meta){
+  tip.innerHTML='<span class="t-t">'+title+'</span>'+(meta?'<br><span class="t-m">'+meta+'</span>':'');
+  tip.classList.add("on");
+  const w=tip.offsetWidth, h=tip.offsetHeight;
+  let lx=x+14, ly=y+16;
+  if(lx+w>window.innerWidth-8) lx=x-w-14;
+  if(ly+h>window.innerHeight-8) ly=y-h-14;
+  tip.style.left=lx+"px"; tip.style.top=ly+"px";
+}
+function hideTip(){ tip.classList.remove("on"); }
+function bindTips(container){
+  if(container.__tt) return;           // bind once; containers persist across re-renders
+  container.__tt = true;
+  container.addEventListener("mousemove",e=>{ const el=e.target.closest&&e.target.closest("[data-tt]"); if(el){ showTip(e.clientX,e.clientY, el.getAttribute("data-tt"), el.getAttribute("data-tm")||""); } else hideTip(); });
+  container.addEventListener("mouseleave",hideTip);
+}
+
+/* ================= SVG helpers ================= */
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,kids){ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); if(kids) kids.forEach(c=>e.appendChild(c)); return e; }
+
+/* ================= render: hero + tiles ================= */
+function moodWord(v){ if(v==null) return "mixed"; if(v>=4.3) return "genuinely good"; if(v>=3.8) return "mostly good"; if(v>=3.2) return "steady"; if(v>=2.6) return "up and down"; return "heavy"; }
+function renderHero(agg){
+  const rows=agg.rows.slice();
+  const withFeel = rows.filter(r=>r.aEnergy!=null);
+  const best = withFeel.slice().sort((a,b)=>b.aEnergy-a.aEnergy)[0];
+  const worst = withFeel.slice().sort((a,b)=>a.aEnergy-b.aEnergy)[0];
+  const top = rows[0];
+  const span = agg.mode==="week"?"this week":"over the last four weeks";
+  let s = "You tracked <strong>"+fmtDur(agg.totalSec)+"</strong> across <strong>"+agg.projects+" projects</strong> "+span+", and the days felt <strong>"+moodWord(agg.allMood)+"</strong>. ";
+  if(best&&worst&&best.key!==worst.key){
+    s += "You were most alive in <strong>"+best.label+"</strong> — and most drained by <strong>"+worst.label+"</strong>, which still took "+fmtDur(worst.sec)+".";
+  } else if(top){ s += "Most of it went to <strong>"+top.label+"</strong>."; }
+  document.getElementById("lede").innerHTML = s;
+}
+function miniSpark(values, hue, w, h){
+  const svg=el("svg",{viewBox:"0 0 "+w+" "+h, preserveAspectRatio:"none", class:"spark"});
+  const pts=values.filter(v=>v!=null); if(pts.length<2){ return svg; }
+  const n=values.length; const pad=2;
+  const xs=i=> pad + i*(w-2*pad)/(n-1);
+  const ys=v=> (h-pad) - ((v-1)/4)*(h-2*pad);
+  let d="", first=true, lastX=null,lastY=null;
+  values.forEach((v,i)=>{ if(v==null) return; const X=xs(i),Y=ys(v); d += (first?"M":"L")+X.toFixed(1)+" "+Y.toFixed(1)+" "; first=false; lastX=X; lastY=Y; });
+  svg.appendChild(el("path",{d, fill:"none", stroke:hue, "stroke-width":"1.6", "stroke-linecap":"round","stroke-linejoin":"round"}));
+  if(lastX!=null) svg.appendChild(el("circle",{cx:lastX,cy:lastY,r:"2.2",fill:hue}));
+  return svg;
+}
+function renderTiles(agg){
+  const days=dailySeries(agg.range, agg.checks);
+  const moodSeries=days.map(d=>d.mood);
+  const host=document.getElementById("tiles"); host.textContent="";
+  const mk=(k,v,unit,sub,spark)=>{
+    const t=document.createElement("div"); t.className="tile";
+    t.innerHTML='<div class="k">'+k+'</div><div class="v">'+v+(unit?'<small>'+unit+'</small>':'')+'</div><div class="sub">'+(sub||"")+'</div>';
+    if(spark) t.appendChild(spark);
+    host.appendChild(t);
+  };
+  mk("tracked", fmtHrsShort(agg.totalSec), "h", "across "+agg.projects+" projects");
+  const top=agg.rows[0];
+  mk("biggest slice", top?top.label:"—", "", top?fmtDur(top.sec)+" · "+Math.round(top.sec/agg.totalSec*100)+"% of tracked time":"");
+  mk("avg mood", agg.allMood!=null?agg.allMood.toFixed(1):"—", "/5", moodWord(agg.allMood), miniSpark(moodSeries, feeling(4.6), 120, 22));
+  mk("check-ins", agg.checkins, "", "moments you logged how you felt");
+}
+
+/* ================= render: energy–time map (bubbles) ================= */
+function renderMap(agg){
+  const host=document.getElementById("map"); host.textContent="";
+  const rows=agg.rows.filter(r=>r.aEnergy!=null && r.n>=1);
+  const W=760,H=460, mL=54,mR=24,mT=22,mB=46;
+  const plotW=W-mL-mR, plotH=H-mT-mB;
+  const maxH=Math.max(...rows.map(r=>r.hours),1)*1.12;
+  const x=h=> mL + (h/maxH)*plotW;
+  const y=e=> mT + (1-(e-1)/4)*plotH;
+  const maxN=Math.max(...rows.map(r=>r.n),1);
+  const rad=n=> 10 + Math.sqrt(n/maxN)*26;
+  const svg=el("svg",{viewBox:"0 0 "+W+" "+H, role:"img","aria-label":"Energy versus time, one bubble per project"});
+
+  // quadrant wash — split at median hours and energy 3
+  const hoursSorted=rows.map(r=>r.hours).sort((a,b)=>a-b);
+  const medH = hoursSorted.length? hoursSorted[Math.floor(hoursSorted.length/2)] : maxH/2;
+  const midX=x(medH), midY=y(3);
+  svg.appendChild(el("rect",{x:midX,y:mT,width:(mL+plotW)-midX,height:midY-mT,fill:cssVar("--teal"),opacity:"0.05"}));           // protect (hi energy, hi time)
+  svg.appendChild(el("rect",{x:midX,y:midY,width:(mL+plotW)-midX,height:(mT+plotH)-midY,fill:cssVar("--clay"),opacity:"0.06"})); // drains (lo energy, hi time)
+
+  // gridlines for energy 1..5
+  for(let e=1;e<=5;e++){ const Y=y(e); svg.appendChild(el("line",{x1:mL,y1:Y,x2:mL+plotW,y2:Y,stroke:cssVar("--line"),"stroke-width":"1"}));
+    svg.appendChild(el("text",{x:mL-10,y:Y+4,"text-anchor":"end",fill:cssVar("--muted"),"font-family":"IBM Plex Mono, monospace","font-size":"11"},[document.createTextNode(String(e))])); }
+  // x ticks
+  const xticks=[0, maxH/3, 2*maxH/3, maxH*0.96];
+  xticks.forEach(h=>{ const X=x(h); svg.appendChild(el("text",{x:X,y:mT+plotH+22,"text-anchor":"middle",fill:cssVar("--muted"),"font-family":"IBM Plex Mono, monospace","font-size":"11"},[document.createTextNode(h<0.05?"0h":fmtHrsShort(h*3600)+"h")])); });
+  // axis labels
+  svg.appendChild(el("text",{x:mL+plotW,y:H-8,"text-anchor":"end",fill:cssVar("--ink-2"),"font-family":"IBM Plex Mono, monospace","font-size":"11","letter-spacing":".04em"},[document.createTextNode("hours spent →")]));
+  const yl=el("text",{x:16,y:mT+plotH/2,"text-anchor":"middle",fill:cssVar("--ink-2"),"font-family":"IBM Plex Mono, monospace","font-size":"11","letter-spacing":".04em",transform:"rotate(-90 16 "+(mT+plotH/2)+")"},[document.createTextNode("energy ↑")]);
+  svg.appendChild(yl);
+
+  // bubbles
+  rows.forEach(r=>{
+    const cx=x(r.hours), cy=y(r.aEnergy), rr=rad(r.n), col=feeling(r.aEnergy);
+    const g=el("g",{class:"svgtip","data-tt":r.label,"data-tm":fmtDur(r.sec)+" · energy "+r.aEnergy.toFixed(1)+" · mood "+r.aMood.toFixed(1)+" · stress "+r.aStress.toFixed(1)+" · "+r.sessions+" sessions"});
+    g.appendChild(el("circle",{cx,cy,r:rr,fill:col,opacity:"0.9",stroke:cssVar("--surface"),"stroke-width":"2"}));
+    const labelRight = cx < mL+plotW-90;
+    g.appendChild(el("text",{x:labelRight?cx+rr+7:cx-rr-7,y:cy+4,"text-anchor":labelRight?"start":"end",fill:cssVar("--ink"),"font-family":"IBM Plex Mono, monospace","font-size":"12.5","font-weight":"500"},[document.createTextNode(r.label)]));
+    svg.appendChild(g);
+  });
+  host.appendChild(svg);
+  bindTips(host);
+}
+
+/* ================= render: projects table ================= */
+function renderTable(agg){
+  const t=document.getElementById("ptable"); t.textContent="";
+  const maxSec=Math.max(...agg.rows.map(r=>r.sec),1);
+  const head=document.createElement("thead");
+  head.innerHTML='<tr><th>project</th><th class="col-hide">time</th><th>hours</th><th class="num">mood</th><th class="num">energy</th><th class="num">stress</th></tr>';
+  t.appendChild(head);
+  const tb=document.createElement("tbody");
+  agg.rows.forEach(r=>{
+    const tr=document.createElement("tr");
+    const dotCol = r.aMood!=null?feeling(r.aMood):"var(--surface-2)";
+    const chip=(v,invert)=>{ if(v==null) return '<span class="hrs" style="color:var(--muted)">—</span>'; const c= invert? feeling(6-v) : feeling(v); return '<span class="chip" style="background:'+c+';color:'+textOn(c)+'">'+v.toFixed(1)+'</span>'; };
+    tr.innerHTML =
+      '<td><span class="pname"><span class="dot" style="background:'+dotCol+'"></span>'+r.label+(r.practice?'<span class="prac">practice</span>':'')+'</span></td>'+
+      '<td class="col-hide"><span class="hrs">'+fmtDur(r.sec)+'</span></td>'+
+      '<td><div class="hbar"><i style="width:'+(r.sec/maxSec*100).toFixed(1)+'%"></i></div></td>'+
+      '<td class="num">'+chip(r.aMood,false)+'</td>'+
+      '<td class="num">'+chip(r.aEnergy,false)+'</td>'+
+      '<td class="num">'+chip(r.aStress,true)+'</td>';
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+}
+
+/* ================= render: heatmap (always last 42 days) ================= */
+function renderHeat(){
+  const r={from:new Date(startOfDay(NOW).getTime()-41*DAY), to:new Date(NOW.getTime()+1)};
+  const frames=framesIn(r), checks=checkinsIn(r);
+  const secByDay={}, moodByDay={};
+  for(const f of frames){ const k=+startOfDay(f.start); secByDay[k]=(secByDay[k]||0)+dur(f); }
+  for(const c of checks){ const k=+startOfDay(c.at); (moodByDay[k]=moodByDay[k]||[]).push(c.mood); }
+  const maxSec=Math.max(...Object.values(secByDay),1);
+  // dow labels aligned to grid start
+  const start=startOfDay(r.from);
+  const dow=document.getElementById("dow"); dow.textContent="";
+  const names=["S","M","T","W","T","F","S"];
+  // our grid is column-major starting at start's weekday; align rows to real weekday
+  const firstWd=start.getDay();
+  for(let i=0;i<7;i++){ const sp=document.createElement("span"); sp.textContent=(i%2===1)?names[i]:""; dow.appendChild(sp); }
+  const grid=document.getElementById("heatgrid"); grid.textContent="";
+  // pad leading blanks so weekday rows line up
+  for(let i=0;i<firstWd;i++){ const c=document.createElement("div"); c.className="cell empty"; c.style.visibility="hidden"; grid.appendChild(c); }
+  const n=Math.round((r.to-start)/DAY);
+  let busiest=null, calmest=null;
+  for(let i=0;i<n;i++){
+    const d=new Date(start.getTime()+i*DAY); const k=+d;
+    const sec=secByDay[k]||0; const moods=moodByDay[k]||[]; const mood=moods.length?moods.reduce((s,x)=>s+x,0)/moods.length:null;
+    const cell=document.createElement("div"); cell.className="cell";
+    if(sec>0){
+      const alpha=0.3+0.7*(sec/maxSec);
+      cell.style.background=feeling(mood);
+      cell.style.opacity=alpha.toFixed(2);
+      cell.setAttribute("data-tt", d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}));
+      cell.setAttribute("data-tm", fmtDur(sec)+(mood!=null?" · mood "+mood.toFixed(1):" · no check-in"));
+      if(!busiest||sec>busiest.sec) busiest={sec,d};
+    } else {
+      cell.classList.add("empty");
+      cell.setAttribute("data-tt", d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}));
+      cell.setAttribute("data-tm","nothing tracked");
+    }
+    grid.appendChild(cell);
+  }
+  bindTips(grid);
+  // legend
+  const leg=document.getElementById("heat-leg"); leg.textContent="";
+  [1,2,3,4,5].forEach(v=>{ const i=document.createElement("i"); i.style.background=feeling(v); leg.appendChild(i); });
+  // side copy
+  const totalSec=Object.values(secByDay).reduce((s,x)=>s+x,0);
+  const activeDays=Object.values(secByDay).filter(x=>x>0).length;
+  document.getElementById("heat-copy").innerHTML = "You tracked something on <b>"+activeDays+" of the last 42 days</b>, "+fmtDur(totalSec)+" in all. Greener days are the ones that felt good; a stronger square means more time went into it.";
+}
+
+/* ================= render: trend small multiples ================= */
+function renderTrends(agg){
+  const host=document.getElementById("trends"); host.textContent="";
+  const days=dailySeries(agg.range, agg.checks);
+  const defs=[
+    {key:"mood",   name:"Mood",   cap:"how the day felt",        hue:feeling(4.6), invert:false},
+    {key:"energy", name:"Energy", cap:"how much you had",        hue:cssVar("--accent"), invert:false},
+    {key:"stress", name:"Stress", cap:"how wound up you were",   hue:cssVar("--clay"), invert:true},
+  ];
+  defs.forEach(def=>{
+    const vals=days.map(d=>d[def.key]);
+    const present=vals.filter(v=>v!=null);
+    const nowV=present.length?present[present.length-1]:null;
+    const avgV=present.length?present.reduce((s,x)=>s+x,0)/present.length:null;
+    const card=document.createElement("div"); card.className="trend";
+    card.innerHTML='<div class="th"><b>'+def.name+'</b><span class="now mono" style="color:'+def.hue+'">'+(avgV!=null?avgV.toFixed(1):"—")+'<span style="color:var(--muted);font-size:12px">/5</span></span></div><div class="cap">'+def.cap+'</div>';
+    // chart
+    const W=300,H=86,pad=6, bottom=H-16;
+    const svg=el("svg",{viewBox:"0 0 "+W+" "+H, preserveAspectRatio:"none"});
+    const n=vals.length; const X=i=> pad+i*(W-2*pad)/(n-1); const Y=v=> (bottom) - ((v-1)/4)*(bottom-pad);
+    // baseline mid (3)
+    svg.appendChild(el("line",{x1:pad,y1:Y(3),x2:W-pad,y2:Y(3),stroke:cssVar("--line"),"stroke-width":"1","stroke-dasharray":"2 3"}));
+    // area + line
+    let dL="",dA="",first=true,lastX=null,lastY=null;
+    vals.forEach((v,i)=>{ if(v==null) return; const px=X(i),py=Y(v); if(first){ dA="M"+px+" "+bottom+" L"+px+" "+py+" "; } dL+=(first?"M":"L")+px.toFixed(1)+" "+py.toFixed(1)+" "; dA+="L"+px.toFixed(1)+" "+py.toFixed(1)+" "; first=false; lastX=px; lastY=py; });
+    if(lastX!=null) dA+="L"+lastX+" "+bottom+" Z";
+    svg.appendChild(el("path",{d:dA, fill:def.hue, opacity:"0.1"}));
+    svg.appendChild(el("path",{d:dL, fill:"none", stroke:def.hue, "stroke-width":"1.8","stroke-linecap":"round","stroke-linejoin":"round"}));
+    if(lastX!=null) svg.appendChild(el("circle",{cx:lastX,cy:lastY,r:"2.8",fill:def.hue,stroke:cssVar("--surface"),"stroke-width":"1.5"}));
+    card.appendChild(svg);
+    host.appendChild(card);
+  });
+}
+
+/* ================= render: a representative day timeline ================= */
+function renderTimeline(){
+  // pick the most recent weekday with a decent number of frames
+  let dayStart=null;
+  for(let off=0; off<10; off++){
+    const d=new Date(startOfDay(NOW).getTime()-off*DAY);
+    const wd=d.getDay(); if(wd===0||wd===6) continue;
+    const fs=DATA.frames.filter(f=>+startOfDay(f.start)===+d);
+    if(fs.length>=5){ dayStart=d; break; }
+  }
+  if(!dayStart) dayStart=new Date(startOfDay(NOW).getTime()-DAY);
+  const frames=DATA.frames.filter(f=>+startOfDay(f.start)===+dayStart).sort((a,b)=>a.start-b.start);
+  const checks=DATA.checkins.filter(c=>+startOfDay(c.at)===+dayStart);
+  document.getElementById("tl-date").textContent = dayStart.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"});
+
+  const H0=7, H1=23; // 7:00 .. 23:00
+  const W=760,H=132, mL=8,mR=8, trackY=58, trackH=34;
+  const plotW=W-mL-mR;
+  const xx=date=>{ const h=date.getHours()+date.getMinutes()/60; return mL + Math.max(0,Math.min(1,(h-H0)/(H1-H0)))*plotW; };
+  const svg=el("svg",{viewBox:"0 0 "+W+" "+H, role:"img","aria-label":"One day of tracked frames with check-ins"});
+  // hour ticks
+  for(let h=H0;h<=H1;h+=2){ const X=mL+((h-H0)/(H1-H0))*plotW; svg.appendChild(el("line",{x1:X,y1:trackY-6,x2:X,y2:trackY+trackH+6,stroke:cssVar("--line"),"stroke-width":"1"}));
+    svg.appendChild(el("text",{x:X,y:trackY+trackH+22,"text-anchor":"middle",fill:cssVar("--muted"),"font-family":"IBM Plex Mono, monospace","font-size":"10.5"},[document.createTextNode((h<10?"0":"")+h+":00")])); }
+  // track base
+  svg.appendChild(el("rect",{x:mL,y:trackY,width:plotW,height:trackH,rx:7,fill:cssVar("--surface-2")}));
+  // frames
+  const used=new Set();
+  frames.forEach(f=>{
+    const x1=xx(f.start), x2=Math.max(x1+2,xx(f.stop)); const w=x2-x1;
+    const col=feeling(PROJECTS[f.key].energy);
+    const g=el("g",{class:"svgtip","data-tt":f.project,"data-tm":f.start.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})+"–"+f.stop.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})+" · "+fmtDur(dur(f))+(f.sheet!=="default"?" · "+f.sheet:"")});
+    g.appendChild(el("rect",{x:x1,y:trackY+2,width:w,height:trackH-4,rx:5,fill:col,opacity:"0.92"}));
+    if(w>44){ g.appendChild(el("text",{x:x1+6,y:trackY+trackH/2+4,fill:textOn(col),"font-family":"IBM Plex Mono, monospace","font-size":"11","font-weight":"500","opacity":"0.96"},[document.createTextNode(f.project)])); }
+    used.add(f.key);
+    svg.appendChild(g);
+  });
+  // check-in markers above
+  checks.forEach(c=>{
+    const X=xx(c.at); const col=feeling(c.mood);
+    const g=el("g",{class:"svgtip","data-tt":"check-in · "+c.at.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}),"data-tm":"mood "+c.mood+" · energy "+c.energy+" · stress "+c.stress});
+    g.appendChild(el("line",{x1:X,y1:trackY-4,x2:X,y2:28,stroke:cssVar("--line-2"),"stroke-width":"1"}));
+    g.appendChild(el("circle",{cx:X,cy:24,r:"5",fill:col,stroke:cssVar("--surface"),"stroke-width":"2"}));
+    svg.appendChild(g);
+  });
+  const host=document.getElementById("timeline"); host.textContent=""; host.appendChild(svg);
+  bindTips(host);
+  // legend: projects used that day
+  const leg=document.getElementById("tl-legend"); leg.textContent="";
+  ORDER.filter(k=>used.has(k)).forEach(k=>{ const s=document.createElement("span"); s.innerHTML='<i style="background:'+feeling(PROJECTS[k].energy)+'"></i>'+PROJECTS[k].label; leg.appendChild(s); });
+  const ci=document.createElement("span"); ci.innerHTML='<i style="background:'+feeling(4.5)+';border-radius:50%"></i>check-in'; ci.style.color="var(--ink-2)"; leg.appendChild(ci);
+}
+
+/* ================= quad note colour fix (::before via boxed spans) ================= */
+function paintQuads(){
+  // give each quad a small colour swatch by setting the ::before colour through a CSS var on the element
+  const qs=document.querySelectorAll(".quad-note .q");
+  const cols=[feeling(4.6),feeling(3.9),feeling(2.9),feeling(1.7)];
+  qs.forEach((q,i)=>{ q.style.setProperty("--qc", cols[i]); });
+}
+
+/* ================= render: deep-work streak ================= */
+function deepDailyMap(){ const m={}; for(const f of DATA.frames){ if(DEEP_KEYS.indexOf(f.key)>=0 && dur(f)>=DEEP_MIN){ const k=+startOfDay(f.start); m[k]=(m[k]||0)+dur(f); } } return m; }
+function currentStreak(hit, today){ let c=+today; if(!hit.has(c)){ c-=DAY; if(!hit.has(c)) return 0; } let n=0; while(hit.has(c)){ n++; c-=DAY; } return n; }
+function longestDeepStreak(hit){ const s=[...hit].sort((a,b)=>a-b); let best=0,run=0,prev=null; for(const d of s){ run=(prev!=null && d-prev===DAY)?run+1:1; best=Math.max(best,run); prev=d; } return best; }
+function renderStreak(agg){
+  const dmap=deepDailyMap();
+  const hit=new Set(Object.keys(dmap).filter(k=>dmap[k]>=DEEP_GOAL).map(Number));
+  const cur=currentStreak(hit, startOfDay(NOW));
+  const best=longestDeepStreak(hit);
+  document.getElementById("streak-num").textContent=cur;
+  document.getElementById("streak-days").textContent=(cur===1?"day":"days");
+  document.getElementById("streak-best").textContent="longest run: "+best+(best===1?" day":" days");
+  const deepSec=agg.frames.filter(f=>DEEP_KEYS.indexOf(f.key)>=0 && dur(f)>=DEEP_MIN).reduce((s,f)=>s+dur(f),0);
+  document.getElementById("streak-hours").textContent=fmtDur(deepSec);
+  document.getElementById("streak-share").textContent=(agg.totalSec?Math.round(deepSec/agg.totalSec*100):0)+"%";
+  // day strip over the selected range
+  const r=agg.range, start=startOfDay(r.from), n=Math.round((r.to-start)/DAY), todayK=+startOfDay(NOW);
+  const strip=document.getElementById("streak-strip"); strip.textContent="";
+  for(let i=0;i<n;i++){
+    const d=new Date(start.getTime()+i*DAY), k=+d, sec=dmap[k]||0, isHit=hit.has(k);
+    const cell=document.createElement("div");
+    cell.className="d"+(isHit?" hit":"")+(k===todayK?" today":"");
+    cell.setAttribute("data-tt", d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}));
+    cell.setAttribute("data-tm", sec>0?(fmtDur(sec)+" deep"+(isHit?" · goal met":" · short of goal")):"no deep work");
+    strip.appendChild(cell);
+  }
+  bindTips(strip);
+}
+
+/* ================= master render ================= */
+let MODE = "month";
+function renderAll(){
+  const agg=aggregate(MODE);
+  renderHero(agg);
+  renderTiles(agg);
+  renderMap(agg);
+  renderTable(agg);
+  renderStreak(agg);
+  renderHeat();
+  renderTrends(agg);
+  renderTimeline();
+  paintQuads();
+}
+
+/* ---- quad swatch colour via a tiny style rule using currentColor fallback ---- */
+const quadStyle=document.createElement("style");
+quadStyle.textContent='.quad-note .q::before{background:var(--qc,var(--muted));}';
+document.head.appendChild(quadStyle);
+
+/* ================= controls ================= */
+function setMode(m){
+  MODE=m;
+  document.getElementById("r-week").setAttribute("aria-pressed", m==="week");
+  document.getElementById("r-month").setAttribute("aria-pressed", m==="month");
+  try{ localStorage.setItem("hf-range",m); }catch(e){}
+  renderAll();
+}
+document.getElementById("r-week").addEventListener("click",()=>setMode("week"));
+document.getElementById("r-month").addEventListener("click",()=>setMode("month"));
+
+const SUN='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+const MOON='<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+function paintThemeIcon(){ document.getElementById("theme-ico").innerHTML = curTheme()==="dark"?SUN:MOON; }
+function applyTheme(t){ document.documentElement.setAttribute("data-theme",t); try{ localStorage.setItem("hf-theme",t); }catch(e){} paintThemeIcon(); renderAll(); }
+document.getElementById("theme").addEventListener("click",()=>{ applyTheme(curTheme()==="dark"?"light":"dark"); });
+if(window.matchMedia){ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{ if(!document.documentElement.getAttribute("data-theme")){ paintThemeIcon(); renderAll(); } }); }
+
+/* ================= breathing pause ================= */
+const BPAT   = { box:[4,4,4,4], coherent:[5.5,0,5.5,0], relax:[4,7,8,0] };
+const BHINT  = { box:"box · 4·4·4·4", coherent:"coherent · 5.5–5.5", relax:"4-7-8 · long exhale" };
+const BDESC  = { box:"Equal counts all round — steady, and easy to hold on to.", coherent:"About five and a half breaths a minute, evenly.", relax:"The 4-7-8 count, with a long exhale to settle." };
+const BPHLAB = { inhale:"Breathe in", hold:"Hold", exhale:"Breathe out", hold_out:"Rest" };
+const BGUIDE = ["Let the out-breath be a little longer than the in-breath.","Soften the jaw, the shoulders, the hands.","Sounds arrive and pass. No need to follow them.","Nothing to add. Just this breath."];
+function bPhaseList(key){ const p=BPAT[key]; return [["inhale",p[0]],["hold",p[1]],["exhale",p[2]],["hold_out",p[3]]].filter(x=>x[1]>0); }
+const B = { run:false, key:"box", phases:bPhaseList("box"), idx:0, round:1, start:0, raf:0 };
+const BMIN=0.64, BMAX=1.0, BCIRC=2*Math.PI*100;
+const bEase=t=>(1-Math.cos(Math.PI*Math.min(1,Math.max(0,t))))/2;
+function bReduced(){ return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+
+function setupBreathe(){
+  const orb=document.getElementById("b-orb"), ring=document.getElementById("b-ring"), marker=document.getElementById("b-marker");
+  const phaseEl=document.getElementById("b-phase"), countEl=document.getElementById("b-count"), guideEl=document.getElementById("b-guide");
+  const toggle=document.getElementById("b-toggle");
+
+  function showBox(isBox){
+    document.getElementById("b-circ-track").style.display = isBox?"none":"";
+    ring.style.display = isBox?"none":"";
+    document.getElementById("b-square").style.display = isBox?"":"none";
+    document.getElementById("b-sqlabels").style.display = isBox?"":"none";
+    marker.style.display = isBox?"":"none";
+  }
+  function markerAt(edge,t){
+    t=Math.min(1,Math.max(0,t)); let x,y;
+    if(edge===0){ x=20; y=200-180*t; }        // inhale: up the left edge
+    else if(edge===1){ x=20+180*t; y=20; }     // hold: across the top
+    else if(edge===2){ x=200; y=20+180*t; }    // exhale: down the right edge
+    else { x=200-180*t; y=200; }               // rest: back along the bottom
+    marker.setAttribute("cx",x.toFixed(1)); marker.setAttribute("cy",y.toFixed(1));
+  }
+  function resetVisual(){
+    orb.style.transform = bReduced()?"scale(.82)":"scale("+BMIN+")";
+    ring.setAttribute("stroke-dashoffset", BCIRC.toFixed(1));
+    markerAt(0,0);
+    phaseEl.textContent="Ready when you are"; countEl.textContent="";
+  }
+  function frame(now){
+    if(!B.run) return;
+    const cur=B.phases[B.idx], key=cur[0], secs=cur[1];
+    let t=(now-B.start)/(secs*1000); if(t>1)t=1;
+    let scale, prog;
+    if(key==="inhale"){ scale=BMIN+(BMAX-BMIN)*bEase(t); prog=t; }
+    else if(key==="exhale"){ scale=BMAX-(BMAX-BMIN)*bEase(t); prog=1-t; }
+    else if(key==="hold"){ scale=BMAX; prog=1; }
+    else { scale=BMIN; prog=0; }
+    if(!bReduced()) orb.style.transform="scale("+scale.toFixed(3)+")";
+    if(B.key==="box") markerAt(B.idx, t);
+    else ring.setAttribute("stroke-dashoffset", (BCIRC*(1-prog)).toFixed(1));
+    phaseEl.textContent=BPHLAB[key];
+    countEl.textContent=String(Math.max(1,Math.ceil((1-t)*secs)));
+    if(t>=1){ B.idx++; if(B.idx>=B.phases.length){ B.idx=0; B.round++; guideEl.textContent=BGUIDE[(B.round-2)%BGUIDE.length]; } B.start=now; }
+    B.raf=requestAnimationFrame(frame);
+  }
+  function start(){ B.run=true; toggle.textContent="Pause"; if(B.idx>=B.phases.length) B.idx=0; guideEl.textContent="Nothing to solve for the next little while."; B.start=performance.now(); cancelAnimationFrame(B.raf); B.raf=requestAnimationFrame(frame); }
+  function pause(){ B.run=false; toggle.textContent="Resume"; cancelAnimationFrame(B.raf); phaseEl.textContent="Paused"; countEl.textContent=""; guideEl.textContent="Whenever you’re ready."; }
+  toggle.addEventListener("click", ()=>{ B.run?pause():start(); });
+
+  document.querySelectorAll(".pattern-seg button").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const k=btn.getAttribute("data-pat"); if(k===B.key) { /* allow re-select to re-centre */ }
+      B.key=k; B.phases=bPhaseList(k); B.idx=0; B.round=1;
+      document.querySelectorAll(".pattern-seg button").forEach(b=>b.setAttribute("aria-pressed", b===btn?"true":"false"));
+      document.getElementById("b-hint").textContent=BHINT[k];
+      document.getElementById("b-desc").textContent=BDESC[k];
+      showBox(k==="box");
+      if(B.run){ B.start=performance.now(); } else { resetVisual(); }
+    });
+  });
+
+  showBox(B.key==="box");
+  resetVisual();
+}
+
+/* ================= boot ================= */
+(function boot(){
+  try{ const t=localStorage.getItem("hf-theme"); if(t) document.documentElement.setAttribute("data-theme",t); }catch(e){}
+  try{ const r=localStorage.getItem("hf-range"); if(r==="week") MODE="week"; }catch(e){}
+  document.getElementById("r-week").setAttribute("aria-pressed", MODE==="week");
+  document.getElementById("r-month").setAttribute("aria-pressed", MODE==="month");
+  paintThemeIcon();
+  renderAll();
+  setupBreathe();
+  window.addEventListener("resize",()=>{ hideTip(); });
+})();
+</script>
+
+</body>
+</html>
