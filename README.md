@@ -10,31 +10,9 @@ use from Timetrap, Timewarrior, Watson, utt, Bartib, Helm and friends — plus
 breathing, sitting and mood check-ins — in one tool, with a plaintext backend
 and no dependencies beyond Python 3.9.
 
-```console
-$ klok start acme +api -n "auth endpoint"
-Starting acme +api at 2026-08-31 09:00 [7d2d3734]
-
-$ klok status
-acme +api  1h 30m  (started 09:00, an hour ago)
-  sheet default  |  today 1h 30m  |  id 7d2d3734
-
-$ klok stop
-Stopped acme +api after 1h 30m [7d2d3734]
-
-$ klok report :week
-Mon 31 August 2026 -> Sun 06 September 2026
-
-acme - 3h 00m
-        +api      1h 30m
-        +docs        45m
-        +review      45m
-
-internal - 55m
-        +meeting     40m
-        +email       15m
-
-Total: 3h 55m
-```
+<p align="center">
+  <img src="docs/images/hero.png" alt="klok in the terminal: start a tagged entry, check status, stop the clock" width="609">
+</p>
 
 ## Install
 
@@ -195,6 +173,10 @@ klok undo                             # every change is undoable
 
 ### Reporting
 
+<p align="center">
+  <img src="docs/images/report.png" alt="klok report :week broken down by project and tag, and a per-day bar chart" width="690">
+</p>
+
 ```sh
 klok log :week                        # entries day by day (aliases: display, list)
 klok summary :day                     # dense table with daily subtotals
@@ -246,6 +228,10 @@ klok archive :lastmonth    # move entries to _default so they leave reports
 ```
 
 ### Focus timers
+
+<p align="center">
+  <img src="docs/images/focus.png" alt="klok timer with ASCII art and a big block clock, and the named breathing patterns" width="726">
+</p>
 
 ```sh
 klok timer 25m -m "Deep work" --big --art coffee
@@ -383,7 +369,7 @@ frames.jsonl   one JSON object per line, sorted by start time
 checkins.jsonl mood/energy/stress check-ins, same shape
 config.ini     configuration
 state.json     which sheet is active
-undo.jsonl     the last 100 states, for klok undo
+undo.d/        the last 100 states, one snapshot per file, for klok undo
 ```
 
 `frames.jsonl` is the whole database. It diffs well in git, syncs with any file
