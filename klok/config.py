@@ -53,6 +53,14 @@ DEFAULTS = {
         # `klok status` suggests a pause once a stretch of work runs this long.
         "break_after": "90m",
     },
+    "dashboard": {
+        # Sessions carrying any of these tags count as deep work. If none of
+        # your frames use them, every session long enough counts instead.
+        "deep_tags": "deep,focus",
+        "deep_min": "25m",
+        # A day joins the deep-work streak once it holds this much.
+        "deep_goal": "90m",
+    },
     "focus": {
         "work": "25m",
         "break": "5m",

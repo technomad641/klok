@@ -79,4 +79,4 @@ Framework is stdlib `unittest` (no pytest). Tests live in `tests/`.
 
 ## Gotcha: version is maintained in two places
 
-`klok/__init__.py` sets `__version__` (what `klok version` / `klok --version` print) and `pyproject.toml` sets the published version **independently, by hand**. They are currently out of sync (`__init__.py` says `1.0.0`, `pyproject.toml` says `1.0.1`). When bumping the version, update **both**.
+`klok/__init__.py` sets `__version__` (what `klok version` / `klok --version` print) and `pyproject.toml` sets the published version **independently, by hand**. Both currently say `1.1.0`. When bumping the version, update **both**.

@@ -148,7 +148,18 @@ klok chart :month --by punchcard      # weekday x hour heat map
 klok gaps :day --min 15m              # untracked stretches
 klok stats :month                     # totals, streak, busiest day
 klok projects / klok tags             # with totals
+klok dashboard :month                 # Hours & Feelings web page (alias: dash)
 ```
+
+`klok dashboard` writes a self-contained `dashboard.html` to the data directory
+and opens it. It covers every sheet unless you pass `--sheet NAME`, and defaults
+to the last 42 days. `-o FILE` writes it somewhere else, `--no-open` skips the
+browser, and `--demo` shows the page with built-in sample data. Each check-in is
+joined to the frame that was running when you logged it. Deep work means sessions
+tagged with one of `dashboard.deep_tags` (default `deep,focus`) that run at least
+`dashboard.deep_min` (25m); a day joins the streak at `dashboard.deep_goal` (90m).
+If none of your frames carry those tags, every non-practice session long enough
+counts.
 
 Every report takes the same filters:
 
@@ -316,6 +327,9 @@ klok config edit
 | `mindful.warmup` | – | default settling bell |
 | `mindful.guidance` | `true` | show prompts during a sit |
 | `mindful.break_after` | `90m` | when `klok status` suggests a pause (empty = never) |
+| `dashboard.deep_tags` | `deep,focus` | tags that mark deep work in `klok dashboard` |
+| `dashboard.deep_min` | `25m` | shortest session that counts as deep work |
+| `dashboard.deep_goal` | `90m` | deep work a day needs to join the streak |
 
 ## Where the data lives
 
@@ -329,6 +343,7 @@ else `~/.local/share/klok`):
 ```
 frames.jsonl   one JSON object per line, sorted by start time
 checkins.jsonl mood/energy/stress check-ins, same shape
+dashboard.html the last page `klok dashboard` wrote
 config.ini     configuration
 state.json     which sheet is active
 undo.d/        the last 100 states, one snapshot per file, for klok undo

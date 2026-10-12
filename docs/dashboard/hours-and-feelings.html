@@ -232,6 +232,8 @@ table.feel tr:last-child td{ border-bottom:0; }
 /* ---------- footer ---------- */
 footer{ margin-top:52px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12.5px; display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
 footer .mono{ color:var(--ink-2); }
+footer code, .empty-note code{ font-family:"IBM Plex Mono",monospace; font-size:.92em; color:var(--ink-2); }
+.empty-note{ margin:0; padding:48px 16px; text-align:center; color:var(--muted); font-size:14px; }
 footer .badge{ font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px solid var(--line-2); border-radius:5px; padding:2px 7px; color:var(--ink-2); }
 
 /* ---------- tooltip ---------- */
@@ -271,7 +273,7 @@ footer .badge{ font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px
 <header class="top">
   <div class="brand">
     <span class="logo">k<b>l</b>ok</span>
-    <span class="cmd"><span class="caret">$</span> klok dashboard --since "4 weeks ago"</span>
+    <span class="cmd"><span class="caret">$</span> klok dashboard</span>
   </div>
   <div class="controls">
     <div class="seg" role="group" aria-label="Time range">
@@ -329,9 +331,9 @@ footer .badge{ font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px
     <div class="sec-head">
       <div>
         <h2>Deep-work streak</h2>
-        <p>Days in a row you protected at least 90 focused minutes of making &mdash; on klok, writing or acme. Short sessions, email and meetings don't count.</p>
+        <p id="streak-copy">Days in a row you protected at least 90 focused minutes of making &mdash; on klok, writing or acme. Short sessions, email and meetings don't count.</p>
       </div>
-      <div class="hint">goal: 90m / day</div>
+      <div class="hint" id="streak-goal">goal: 90m / day</div>
     </div>
     <div class="card">
       <div class="streak">
@@ -445,8 +447,8 @@ footer .badge{ font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px
   </section>
 
   <footer>
-    <span class="badge">prototype</span>
-    <span>Demo data, generated to show the idea at its best.</span>
+    <span class="badge" id="foot-badge">demo</span>
+    <span id="foot-note">Demo data, generated to show the idea at its best. Run <code>klok dashboard</code> to see your own.</span>
     <span class="mono">Built on <b>klok</b> &mdash; a zero-dependency plaintext CLI time tracker.</span>
   </footer>
 </div>
@@ -456,23 +458,29 @@ footer .badge{ font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px
 <script>
 "use strict";
 /* ========================================================================
-   Hours & Feelings — a klok dashboard prototype
-   Demo data is generated deterministically, then aggregated exactly the way
-   klok would: frames give you time, check-ins give you feeling, and the two
-   are joined in time.
+   Hours & Feelings — the klok dashboard
+   `klok dashboard` replaces the KLOK_DATA marker below with your frames and
+   check-ins, already joined in time. When it is left as null, the page
+   generates deterministic demo data instead (`klok dashboard --demo`).
    ======================================================================== */
+const KLOK = /*KLOK_DATA*/null;
+const LIVE = KLOK !== null;
 
 /* ---- tiny deterministic RNG so the demo is stable across reloads ---- */
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 
-/* ---- fixed "now" so the calendar is sensible ---- */
-const NOW = new Date(2026,9,11,19,24,0); // Sat 11 Oct 2026, 19:24
+/* ---- "now": the moment klok wrote the page, or a fixed demo date ---- */
+const NOW = LIVE ? new Date(KLOK.now) : new Date(2026,9,11,19,24,0); // demo: Sat 11 Oct 2026, 19:24
 const DAY = 86400000;
 function startOfDay(d){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()); }
 function setHM(d,h,m){ return new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,m); }
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function mean(a){ const v=a.filter(x=>x!=null); return v.length ? v.reduce((s,x)=>s+x,0)/v.length : null; }
+function fmt1(v){ return v==null ? "—" : v.toFixed(1); }
+function plural(n,word){ return n+" "+word+(n===1?"":"s"); }
 
-/* ---- projects: label, sheet, and the feeling they tend to carry ---- */
-const PROJECTS = {
+/* ---- demo projects: label, sheet, and the feeling they tend to carry ---- */
+const DEMO_PROJECTS = {
   klok:       {label:"klok",       sheet:"default", energy:4.5, mood:4.4, stress:1.8, tags:["code"],            practice:false},
   writing:    {label:"writing",    sheet:"default", energy:4.0, mood:4.1, stress:2.2, tags:["deep"],            practice:false},
   acme:       {label:"acme",        sheet:"default", energy:3.2, mood:3.3, stress:2.9, tags:["client","bill"],  practice:false},
@@ -481,12 +489,16 @@ const PROJECTS = {
   meetings:   {label:"meetings",   sheet:"default", energy:2.3, mood:2.5, stress:3.9, tags:["meeting"],         practice:false},
   meditation: {label:"meditation", sheet:"mind",    energy:4.2, mood:4.7, stress:1.3, tags:["meditation"],      practice:true},
 };
-const ORDER = ["klok","writing","acme","admin","email","meetings","meditation"];
+const DEMO_ORDER = ["klok","writing","acme","admin","email","meetings","meditation"];
+
+/* live projects arrive ordered by time spent, with their average energy */
+const PROJECTS = LIVE ? Object.fromEntries(KLOK.projects.map(p=>[p.name,{label:p.name, energy:p.energy, practice:p.practice}])) : DEMO_PROJECTS;
+const ORDER = LIVE ? KLOK.projects.map(p=>p.name) : DEMO_ORDER;
 
 /* deep work = focused making, in long-enough sessions, toward a daily goal */
-const DEEP_KEYS = ["klok","writing","acme"];
-const DEEP_MIN  = 25*60;   // a session must run this long to count
-const DEEP_GOAL = 90*60;   // a day "hits" at this much deep time
+const DEEP_KEYS = ["klok","writing","acme"];   // demo only; klok marks live frames itself
+const DEEP_MIN  = LIVE ? KLOK.deep.min  : 25*60;   // a session must run this long to count
+const DEEP_GOAL = LIVE ? KLOK.deep.goal : 90*60;   // a day "hits" at this much deep time
 
 /* ---- generate ~42 days of frames + check-ins ---- */
 function clampScore(m,rng){ const n=(rng()+rng()+rng()-1.5); return Math.max(1,Math.min(5,Math.round(m+n*0.9))); }
@@ -503,7 +515,8 @@ function makeData(){
       const meta = PROJECTS[key];
       const start = new Date(t);
       const stop  = new Date(t.getTime()+mins*60000);
-      frames.push({start,stop,key,project:meta.label,sheet:meta.sheet,tags:meta.tags.slice()});
+      frames.push({start,stop,key,project:meta.label,sheet:meta.sheet,tags:meta.tags.slice(),
+                   deep:DEEP_KEYS.indexOf(key)>=0 && mins*60>=DEEP_MIN});
       if(rng()<checkinP){
         const at = new Date(start.getTime()+mins*60000*(0.25+rng()*0.55));
         checkins.push({at, mood:clampScore(meta.mood,rng), energy:clampScore(meta.energy,rng), stress:clampScore(meta.stress,rng), key});
@@ -536,7 +549,12 @@ function makeData(){
   checkins.sort((a,b)=>a.at-b.at);
   return {frames,checkins};
 }
-const DATA = makeData();
+function liveData(){
+  const frames=KLOK.frames.map(f=>({start:new Date(f.start), stop:new Date(f.stop), key:f.project, project:f.project, sheet:f.sheet, tags:f.tags, deep:f.deep}));
+  const checkins=KLOK.checkins.map(c=>({at:new Date(c.at), mood:c.mood, energy:c.energy, stress:c.stress, key:c.project}));
+  return {frames, checkins};
+}
+const DATA = LIVE ? liveData() : makeData();
 
 /* ---- aggregation helpers ---- */
 function windowRange(mode){ const end=NOW; const days = mode==="week"?7:28; return {from:new Date(startOfDay(end).getTime()-(days-1)*DAY), to:new Date(end.getTime()+1)}; }
@@ -553,11 +571,10 @@ function aggregate(mode){
   for(const key of ORDER) perProj[key] = {key, label:PROJECTS[key].label, practice:PROJECTS[key].practice, sec:0, mood:[], energy:[], stress:[], sessions:0};
   for(const f of frames){ perProj[f.key].sec += dur(f); perProj[f.key].sessions++; }
   for(const c of checks){ const p=perProj[c.key]; if(p){ p.mood.push(c.mood); p.energy.push(c.energy); p.stress.push(c.stress); } }
-  const avg = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : null;
-  const rows = ORDER.map(k=>{ const p=perProj[k]; return {...p, hours:p.sec/3600, aMood:avg(p.mood), aEnergy:avg(p.energy), aStress:avg(p.stress), n:p.mood.length}; }).filter(p=>p.sec>0);
+  const rows = ORDER.map(k=>{ const p=perProj[k]; return {...p, hours:p.sec/3600, aMood:mean(p.mood), aEnergy:mean(p.energy), aStress:mean(p.stress), n:p.mood.length}; }).filter(p=>p.sec>0);
   rows.sort((a,b)=>b.sec-a.sec);
   const totalSec = rows.reduce((s,p)=>s+p.sec,0);
-  const allMood = avg(checks.map(c=>c.mood)), allEnergy = avg(checks.map(c=>c.energy)), allStress = avg(checks.map(c=>c.stress));
+  const allMood = mean(checks.map(c=>c.mood)), allEnergy = mean(checks.map(c=>c.energy)), allStress = mean(checks.map(c=>c.stress));
   return {range:r, mode, rows, totalSec, projects:rows.length, checkins:checks.length, allMood, allEnergy, allStress, frames, checks};
 }
 
@@ -566,7 +583,7 @@ function dailySeries(r, checks){
   const byDay = {};
   for(const c of checks){ const k=+startOfDay(c.at); (byDay[k]=byDay[k]||[]).push(c); }
   const days=[]; const start=startOfDay(r.from); const n=Math.round((r.to-start)/DAY);
-  for(let i=0;i<n;i++){ const d=new Date(start.getTime()+i*DAY); const cs=byDay[+d]||[]; const a=f=>cs.length?cs.reduce((s,x)=>s+x[f],0)/cs.length:null; days.push({date:d, mood:a("mood"), energy:a("energy"), stress:a("stress"), has:cs.length>0}); }
+  for(let i=0;i<n;i++){ const d=new Date(start.getTime()+i*DAY); const cs=byDay[+d]||[]; const a=f=>mean(cs.map(x=>x[f])); days.push({date:d, mood:a("mood"), energy:a("energy"), stress:a("stress"), has:cs.length>0}); }
   return days;
 }
 
@@ -593,7 +610,7 @@ function textOn(hex){ if(!hex||hex[0]!=="#") return "#201e19"; const [r,g,b]=hx(
 /* ================= tooltip ================= */
 const tip=document.getElementById("tip");
 function showTip(x,y,title,meta){
-  tip.innerHTML='<span class="t-t">'+title+'</span>'+(meta?'<br><span class="t-m">'+meta+'</span>':'');
+  tip.innerHTML='<span class="t-t">'+esc(title)+'</span>'+(meta?'<br><span class="t-m">'+esc(meta)+'</span>':'');
   tip.classList.add("on");
   const w=tip.offsetWidth, h=tip.offsetHeight;
   let lx=x+14, ly=y+16;
@@ -622,10 +639,11 @@ function renderHero(agg){
   const worst = withFeel.slice().sort((a,b)=>a.aEnergy-b.aEnergy)[0];
   const top = rows[0];
   const span = agg.mode==="week"?"this week":"over the last four weeks";
-  let s = "You tracked <strong>"+fmtDur(agg.totalSec)+"</strong> across <strong>"+agg.projects+" projects</strong> "+span+", and the days felt <strong>"+moodWord(agg.allMood)+"</strong>. ";
+  let s = "You tracked <strong>"+fmtDur(agg.totalSec)+"</strong> across <strong>"+plural(agg.projects,"project")+"</strong> "+span+
+          (agg.allMood!=null ? ", and the days felt <strong>"+moodWord(agg.allMood)+"</strong>. " : ". ");
   if(best&&worst&&best.key!==worst.key){
-    s += "You were most alive in <strong>"+best.label+"</strong> — and most drained by <strong>"+worst.label+"</strong>, which still took "+fmtDur(worst.sec)+".";
-  } else if(top){ s += "Most of it went to <strong>"+top.label+"</strong>."; }
+    s += "You were most alive in <strong>"+esc(best.label)+"</strong> — and most drained by <strong>"+esc(worst.label)+"</strong>, which still took "+fmtDur(worst.sec)+".";
+  } else if(top){ s += "Most of it went to <strong>"+esc(top.label)+"</strong>."; }
   document.getElementById("lede").innerHTML = s;
 }
 function miniSpark(values, hue, w, h){
@@ -650,10 +668,10 @@ function renderTiles(agg){
     if(spark) t.appendChild(spark);
     host.appendChild(t);
   };
-  mk("tracked", fmtHrsShort(agg.totalSec), "h", "across "+agg.projects+" projects");
+  mk("tracked", fmtHrsShort(agg.totalSec), "h", "across "+plural(agg.projects,"project"));
   const top=agg.rows[0];
-  mk("biggest slice", top?top.label:"—", "", top?fmtDur(top.sec)+" · "+Math.round(top.sec/agg.totalSec*100)+"% of tracked time":"");
-  mk("avg mood", agg.allMood!=null?agg.allMood.toFixed(1):"—", "/5", moodWord(agg.allMood), miniSpark(moodSeries, feeling(4.6), 120, 22));
+  mk("biggest slice", top?esc(top.label):"—", "", top?fmtDur(top.sec)+" · "+Math.round(top.sec/agg.totalSec*100)+"% of tracked time":"");
+  mk("avg mood", fmt1(agg.allMood), "/5", moodWord(agg.allMood), miniSpark(moodSeries, feeling(4.6), 120, 22));
   mk("check-ins", agg.checkins, "", "moments you logged how you felt");
 }
 
@@ -661,6 +679,11 @@ function renderTiles(agg){
 function renderMap(agg){
   const host=document.getElementById("map"); host.textContent="";
   const rows=agg.rows.filter(r=>r.aEnergy!=null && r.n>=1);
+  if(!rows.length){
+    const p=document.createElement("p"); p.className="empty-note";
+    p.innerHTML="No energy check-ins in this range yet. Run <code>klok checkin --energy 4</code> while you work, and each project will find its place here.";
+    host.appendChild(p); return;
+  }
   const W=760,H=460, mL=54,mR=24,mT=22,mB=46;
   const plotW=W-mL-mR, plotH=H-mT-mB;
   const maxH=Math.max(...rows.map(r=>r.hours),1)*1.12;
@@ -691,7 +714,7 @@ function renderMap(agg){
   // bubbles
   rows.forEach(r=>{
     const cx=x(r.hours), cy=y(r.aEnergy), rr=rad(r.n), col=feeling(r.aEnergy);
-    const g=el("g",{class:"svgtip","data-tt":r.label,"data-tm":fmtDur(r.sec)+" · energy "+r.aEnergy.toFixed(1)+" · mood "+r.aMood.toFixed(1)+" · stress "+r.aStress.toFixed(1)+" · "+r.sessions+" sessions"});
+    const g=el("g",{class:"svgtip","data-tt":r.label,"data-tm":fmtDur(r.sec)+" · energy "+fmt1(r.aEnergy)+" · mood "+fmt1(r.aMood)+" · stress "+fmt1(r.aStress)+" · "+r.sessions+" sessions"});
     g.appendChild(el("circle",{cx,cy,r:rr,fill:col,opacity:"0.9",stroke:cssVar("--surface"),"stroke-width":"2"}));
     const labelRight = cx < mL+plotW-90;
     g.appendChild(el("text",{x:labelRight?cx+rr+7:cx-rr-7,y:cy+4,"text-anchor":labelRight?"start":"end",fill:cssVar("--ink"),"font-family":"IBM Plex Mono, monospace","font-size":"12.5","font-weight":"500"},[document.createTextNode(r.label)]));
@@ -714,7 +737,7 @@ function renderTable(agg){
     const dotCol = r.aMood!=null?feeling(r.aMood):"var(--surface-2)";
     const chip=(v,invert)=>{ if(v==null) return '<span class="hrs" style="color:var(--muted)">—</span>'; const c= invert? feeling(6-v) : feeling(v); return '<span class="chip" style="background:'+c+';color:'+textOn(c)+'">'+v.toFixed(1)+'</span>'; };
     tr.innerHTML =
-      '<td><span class="pname"><span class="dot" style="background:'+dotCol+'"></span>'+r.label+(r.practice?'<span class="prac">practice</span>':'')+'</span></td>'+
+      '<td><span class="pname"><span class="dot" style="background:'+dotCol+'"></span>'+esc(r.label)+(r.practice?'<span class="prac">practice</span>':'')+'</span></td>'+
       '<td class="col-hide"><span class="hrs">'+fmtDur(r.sec)+'</span></td>'+
       '<td><div class="hbar"><i style="width:'+(r.sec/maxSec*100).toFixed(1)+'%"></i></div></td>'+
       '<td class="num">'+chip(r.aMood,false)+'</td>'+
@@ -731,7 +754,7 @@ function renderHeat(){
   const frames=framesIn(r), checks=checkinsIn(r);
   const secByDay={}, moodByDay={};
   for(const f of frames){ const k=+startOfDay(f.start); secByDay[k]=(secByDay[k]||0)+dur(f); }
-  for(const c of checks){ const k=+startOfDay(c.at); (moodByDay[k]=moodByDay[k]||[]).push(c.mood); }
+  for(const c of checks){ if(c.mood==null) continue; const k=+startOfDay(c.at); (moodByDay[k]=moodByDay[k]||[]).push(c.mood); }
   const maxSec=Math.max(...Object.values(secByDay),1);
   // dow labels aligned to grid start
   const start=startOfDay(r.from);
@@ -809,34 +832,40 @@ function renderTrends(agg){
 
 /* ================= render: a representative day timeline ================= */
 function renderTimeline(){
-  // pick the most recent weekday with a decent number of frames
+  // the most recent full day with a decent number of frames; else the latest day with any
+  const onDay=d=>DATA.frames.filter(f=>+startOfDay(f.start)===+d);
   let dayStart=null;
-  for(let off=0; off<10; off++){
+  for(let off=1; off<=10 && !dayStart; off++){
     const d=new Date(startOfDay(NOW).getTime()-off*DAY);
-    const wd=d.getDay(); if(wd===0||wd===6) continue;
-    const fs=DATA.frames.filter(f=>+startOfDay(f.start)===+d);
-    if(fs.length>=5){ dayStart=d; break; }
+    if(LIVE ? onDay(d).length>=3 : (d.getDay()%6!==0 && onDay(d).length>=5)) dayStart=d;
   }
-  if(!dayStart) dayStart=new Date(startOfDay(NOW).getTime()-DAY);
-  const frames=DATA.frames.filter(f=>+startOfDay(f.start)===+dayStart).sort((a,b)=>a.start-b.start);
+  if(!dayStart){
+    const past=DATA.frames.filter(f=>f.start<=NOW);
+    dayStart = past.length ? startOfDay(past[past.length-1].start) : startOfDay(NOW);
+  }
+  const frames=onDay(dayStart).sort((a,b)=>a.start-b.start);
   const checks=DATA.checkins.filter(c=>+startOfDay(c.at)===+dayStart);
   document.getElementById("tl-date").textContent = dayStart.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"});
 
-  const H0=7, H1=23; // 7:00 .. 23:00
+  // 7:00 .. 23:00, widened for early starts and late nights
+  const hourOf=date=>(date-dayStart)/3600000;
+  let H0=7, H1=23;
+  frames.forEach(f=>{ H0=Math.min(H0,Math.floor(hourOf(f.start))); H1=Math.max(H1,Math.ceil(hourOf(f.stop))); });
+  H0=Math.max(0,H0); H1=Math.min(24,H1); if((H1-H0)%2) H0=Math.max(0,H0-1);
   const W=760,H=132, mL=8,mR=8, trackY=58, trackH=34;
   const plotW=W-mL-mR;
-  const xx=date=>{ const h=date.getHours()+date.getMinutes()/60; return mL + Math.max(0,Math.min(1,(h-H0)/(H1-H0)))*plotW; };
+  const xx=date=>{ const h=hourOf(date); return mL + Math.max(0,Math.min(1,(h-H0)/(H1-H0)))*plotW; };
   const svg=el("svg",{viewBox:"0 0 "+W+" "+H, role:"img","aria-label":"One day of tracked frames with check-ins"});
   // hour ticks
   for(let h=H0;h<=H1;h+=2){ const X=mL+((h-H0)/(H1-H0))*plotW; svg.appendChild(el("line",{x1:X,y1:trackY-6,x2:X,y2:trackY+trackH+6,stroke:cssVar("--line"),"stroke-width":"1"}));
-    svg.appendChild(el("text",{x:X,y:trackY+trackH+22,"text-anchor":"middle",fill:cssVar("--muted"),"font-family":"IBM Plex Mono, monospace","font-size":"10.5"},[document.createTextNode((h<10?"0":"")+h+":00")])); }
+    svg.appendChild(el("text",{x:X,y:trackY+trackH+22,"text-anchor":"middle",fill:cssVar("--muted"),"font-family":"IBM Plex Mono, monospace","font-size":"10.5"},[document.createTextNode((h%24<10?"0":"")+(h%24)+":00")])); }
   // track base
   svg.appendChild(el("rect",{x:mL,y:trackY,width:plotW,height:trackH,rx:7,fill:cssVar("--surface-2")}));
   // frames
   const used=new Set();
   frames.forEach(f=>{
     const x1=xx(f.start), x2=Math.max(x1+2,xx(f.stop)); const w=x2-x1;
-    const col=feeling(PROJECTS[f.key].energy);
+    const col=feeling(PROJECTS[f.key].energy ?? 3);
     const g=el("g",{class:"svgtip","data-tt":f.project,"data-tm":f.start.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})+"–"+f.stop.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})+" · "+fmtDur(dur(f))+(f.sheet!=="default"?" · "+f.sheet:"")});
     g.appendChild(el("rect",{x:x1,y:trackY+2,width:w,height:trackH-4,rx:5,fill:col,opacity:"0.92"}));
     if(w>44){ g.appendChild(el("text",{x:x1+6,y:trackY+trackH/2+4,fill:textOn(col),"font-family":"IBM Plex Mono, monospace","font-size":"11","font-weight":"500","opacity":"0.96"},[document.createTextNode(f.project)])); }
@@ -846,7 +875,7 @@ function renderTimeline(){
   // check-in markers above
   checks.forEach(c=>{
     const X=xx(c.at); const col=feeling(c.mood);
-    const g=el("g",{class:"svgtip","data-tt":"check-in · "+c.at.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}),"data-tm":"mood "+c.mood+" · energy "+c.energy+" · stress "+c.stress});
+    const g=el("g",{class:"svgtip","data-tt":"check-in · "+c.at.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}),"data-tm":"mood "+(c.mood??"—")+" · energy "+(c.energy??"—")+" · stress "+(c.stress??"—")});
     g.appendChild(el("line",{x1:X,y1:trackY-4,x2:X,y2:28,stroke:cssVar("--line-2"),"stroke-width":"1"}));
     g.appendChild(el("circle",{cx:X,cy:24,r:"5",fill:col,stroke:cssVar("--surface"),"stroke-width":"2"}));
     svg.appendChild(g);
@@ -855,7 +884,7 @@ function renderTimeline(){
   bindTips(host);
   // legend: projects used that day
   const leg=document.getElementById("tl-legend"); leg.textContent="";
-  ORDER.filter(k=>used.has(k)).forEach(k=>{ const s=document.createElement("span"); s.innerHTML='<i style="background:'+feeling(PROJECTS[k].energy)+'"></i>'+PROJECTS[k].label; leg.appendChild(s); });
+  ORDER.filter(k=>used.has(k)).forEach(k=>{ const s=document.createElement("span"); s.innerHTML='<i style="background:'+feeling(PROJECTS[k].energy ?? 3)+'"></i>'+esc(PROJECTS[k].label); leg.appendChild(s); });
   const ci=document.createElement("span"); ci.innerHTML='<i style="background:'+feeling(4.5)+';border-radius:50%"></i>check-in'; ci.style.color="var(--ink-2)"; leg.appendChild(ci);
 }
 
@@ -868,10 +897,14 @@ function paintQuads(){
 }
 
 /* ================= render: deep-work streak ================= */
-function deepDailyMap(){ const m={}; for(const f of DATA.frames){ if(DEEP_KEYS.indexOf(f.key)>=0 && dur(f)>=DEEP_MIN){ const k=+startOfDay(f.start); m[k]=(m[k]||0)+dur(f); } } return m; }
+function deepDailyMap(){ const m={}; for(const f of DATA.frames){ if(f.deep){ const k=+startOfDay(f.start); m[k]=(m[k]||0)+dur(f); } } return m; }
 function currentStreak(hit, today){ let c=+today; if(!hit.has(c)){ c-=DAY; if(!hit.has(c)) return 0; } let n=0; while(hit.has(c)){ n++; c-=DAY; } return n; }
 function longestDeepStreak(hit){ const s=[...hit].sort((a,b)=>a-b); let best=0,run=0,prev=null; for(const d of s){ run=(prev!=null && d-prev===DAY)?run+1:1; best=Math.max(best,run); prev=d; } return best; }
 function renderStreak(agg){
+  if(LIVE){
+    document.getElementById("streak-copy").textContent="Days in a row you protected at least "+fmtDur(DEEP_GOAL)+" of deep work: "+KLOK.deep.basis+", in sessions of "+fmtDur(DEEP_MIN)+" or more.";
+    document.getElementById("streak-goal").textContent="goal: "+fmtDur(DEEP_GOAL)+" / day";
+  }
   const dmap=deepDailyMap();
   const hit=new Set(Object.keys(dmap).filter(k=>dmap[k]>=DEEP_GOAL).map(Number));
   const cur=currentStreak(hit, startOfDay(NOW));
@@ -879,7 +912,7 @@ function renderStreak(agg){
   document.getElementById("streak-num").textContent=cur;
   document.getElementById("streak-days").textContent=(cur===1?"day":"days");
   document.getElementById("streak-best").textContent="longest run: "+best+(best===1?" day":" days");
-  const deepSec=agg.frames.filter(f=>DEEP_KEYS.indexOf(f.key)>=0 && dur(f)>=DEEP_MIN).reduce((s,f)=>s+dur(f),0);
+  const deepSec=agg.frames.filter(f=>f.deep).reduce((s,f)=>s+dur(f),0);
   document.getElementById("streak-hours").textContent=fmtDur(deepSec);
   document.getElementById("streak-share").textContent=(agg.totalSec?Math.round(deepSec/agg.totalSec*100):0)+"%";
   // day strip over the selected range
@@ -1015,6 +1048,10 @@ function setupBreathe(){
   try{ const r=localStorage.getItem("hf-range"); if(r==="week") MODE="week"; }catch(e){}
   document.getElementById("r-week").setAttribute("aria-pressed", MODE==="week");
   document.getElementById("r-month").setAttribute("aria-pressed", MODE==="month");
+  if(LIVE){
+    document.getElementById("foot-badge").textContent="your data";
+    document.getElementById("foot-note").textContent="Built from "+KLOK.frames.length+" frames and "+KLOK.checkins.length+" check-ins, "+NOW.toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})+". Nothing left your machine.";
+  }
   paintThemeIcon();
   renderAll();
   setupBreathe();

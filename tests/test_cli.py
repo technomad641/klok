@@ -542,6 +542,71 @@ class MindfulnessTests(CliTestCase):
         self.assertNotIn("klok breathe", self.assertOk("status"))
 
 
+class DashboardTests(CliTestCase):
+    def payload(self, *args):
+        out = self.home / "dash.html"
+        self.assertOk("dashboard", "--no-open", "-o", out, *args)
+        page = out.read_text(encoding="utf-8")
+        marker = "const KLOK = "
+        start = page.index(marker) + len(marker)
+        return json.loads(page[start:page.index(";\n", start)])
+
+    def test_check_ins_are_joined_to_the_frame_running_at_the_time(self):
+        self.assertOk("track", "09:00", "to", "11:00", "acme", "+deep")
+        self.assertOk("track", "11:00", "to", "11:20", "email")
+        self.assertOk("checkin", "--energy", "4", "--mood", "5", "--at", "10:00")
+        self.assertOk("checkin", "--energy", "2", "--at", "11:10")
+        self.assertOk("checkin", "--mood", "3", "--at", "13:00")
+        data = self.payload()
+        self.assertEqual([c["project"] for c in data["checkins"]], ["acme", "email", None])
+        self.assertEqual([p["name"] for p in data["projects"]], ["acme", "email"])
+        self.assertEqual(data["projects"][0]["energy"], 4)
+
+    def test_deep_work_follows_tags_and_session_length(self):
+        self.assertOk("track", "09:00", "to", "11:00", "acme", "+deep")
+        self.assertOk("track", "11:00", "to", "11:10", "acme", "+deep")
+        self.assertOk("track", "12:00", "to", "14:00", "email")
+        data = self.payload()
+        self.assertEqual([f["deep"] for f in data["frames"]], [True, False, False])
+        self.assertIn("+deep", data["deep"]["basis"])
+
+    def test_without_deep_tags_every_long_session_counts(self):
+        self.assertOk("track", "09:00", "to", "11:00", "acme")
+        self.assertOk("track", "11:00", "to", "11:10", "email")
+        data = self.payload()
+        self.assertEqual([f["deep"] for f in data["frames"]], [True, False])
+
+    def test_practice_sessions_are_marked_and_never_deep(self):
+        self.assertOk("track", "07:00", "to", "07:30", "mindfulness", "+meditation",
+                      "--sheet", "wellbeing")
+        data = self.payload()
+        self.assertTrue(data["projects"][0]["practice"])
+        self.assertFalse(data["frames"][0]["deep"])
+
+    def test_range_limits_what_is_included(self):
+        self.assertOk("track", "2026-08-01 09:00", "to", "2026-08-01 10:00", "old")
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        data = self.payload(":day")
+        self.assertEqual([f["project"] for f in data["frames"]], ["acme"])
+
+    def test_project_names_cannot_break_out_of_the_script(self):
+        self.assertOk("track", "09:00", "to", "10:00", "</script><b>x", "--force")
+        page = (self.home / "dash.html")
+        self.assertOk("dashboard", "--no-open", "-o", page)
+        self.assertNotIn("</script><b>", page.read_text(encoding="utf-8"))
+
+    def test_empty_range_explains_what_to_do(self):
+        code, output = self.run_klok("dashboard", "--no-open")
+        self.assertEqual(code, 1)
+        self.assertIn("--demo", output)
+
+    def test_demo_needs_no_data(self):
+        output = self.assertOk("dashboard", "--demo", "--no-open")
+        self.assertIn("demo data", output)
+        page = (self.home / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("/*KLOK_DATA*/null", page)
+
+
 class HelpAndErrorsTests(CliTestCase):
     def test_top_level_help_is_grouped_with_a_quick_start(self):
         code, output = self.run_klok_exit("--help")

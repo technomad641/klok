@@ -105,19 +105,23 @@ klok checkin --mood 4 --energy 3 --stress 2
 klok mindful :month          # sessions, time, averages, streaks
 ```
 
-## A web dashboard (prototype)
+## A web dashboard
 
-Because the backend is just `frames.jsonl` and `checkins.jsonl`, it's easy to put
-a richer surface on top. **Hours & Feelings** reads both streams and shows not
-only where time went but how it felt — joining each check-in to whatever you were
+```sh
+klok dashboard                # the last six weeks, opened in your browser
+klok dashboard :month         # any range the reports accept
+klok dashboard --demo         # try it with sample data first
+```
+
+**Hours & Feelings** reads `frames.jsonl` and `checkins.jsonl` and shows not only
+where time went but how it felt, joining each check-in to whatever you were
 tracking at that moment. It has an energy–time map (every project placed by hours
 and energy), a deep-work streak, a mood calendar, trend lines, and a box-breathing
 pause built on the same patterns as `klok breathe`.
 
-A self-contained HTML prototype with demo data — open it in a browser:
+The page is a single offline HTML file written to your data directory: no server,
+nothing fetched, no new dependencies. A copy with demo data lives at
 **[`docs/dashboard/hours-and-feelings.html`](docs/dashboard/hours-and-feelings.html)**.
-It's a design prototype; the natural next step is a `klok serve` command on the
-standard-library HTTP server, keeping the no-dependency promise.
 
 ## How it's built
 

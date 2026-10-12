@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from klok import __version__
 from klok.config import Config
 from klok.focus import ART, countdown, notify, pomodoro_plan
+from klok.dashboard import build_payload, render_page
 from klok.formats import FORMATS, parse_import, render
 from klok.mindful import (BREATHING_TAG, MEDITATION_TAG, PATTERNS, Checkin,
                           CheckinStore, MindfulError, breath_plan, breathe,
@@ -846,6 +847,46 @@ def cmd_export(ctx: Context) -> int:
     return 0
 
 
+def cmd_dashboard(ctx: Context) -> int:
+    """Write the Hours & Feelings page for a range and open it."""
+    args = ctx.args
+    if args.demo:
+        page, summary = render_page(None), "demo data"
+    else:
+        start, end = ctx.range_of("last 42 days")
+        now = min(ctx.now, end - timedelta(seconds=1))
+        frames = ctx.store.select(start, end, sheet=args.sheet, now=now)
+        checkins = CheckinStore(ctx.config).select(start, end)
+        if not frames and not checkins:
+            ctx.echo("Nothing tracked in this range. Start with `klok start <project>`, "
+                     "or try `klok dashboard --demo`.")
+            return 1
+        payload = build_payload(
+            frames, checkins, now,
+            deep_tags=ctx.config.get_list("dashboard.deep_tags"),
+            deep_min=parse_duration(ctx.config.get("dashboard.deep_min", "25m")),
+            deep_goal=parse_duration(ctx.config.get("dashboard.deep_goal", "90m")),
+            practice_sheet=ctx.config.get("mindful.sheet", "wellbeing"))
+        page = render_page(payload)
+        summary = "%d frames, %d check-ins" % (len(frames), len(checkins))
+
+    if args.output:
+        path = os.path.abspath(args.output)
+    else:
+        ctx.config.ensure_home()
+        path = os.path.join(str(ctx.config.home), "dashboard.html")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(page)
+    ctx.echo("Wrote dashboard (%s) to %s" % (summary, path))
+    if not args.no_open:
+        import webbrowser
+        from pathlib import Path
+
+        if not webbrowser.open(Path(path).as_uri()):
+            ctx.echo("Open it in a browser to view it.")
+    return 0
+
+
 def cmd_import(ctx: Context) -> int:
     text = (open(ctx.args.file, encoding="utf-8").read() if ctx.args.file and ctx.args.file != "-"
             else sys.stdin.read())
@@ -1676,6 +1717,14 @@ def build_parser() -> argparse.ArgumentParser:
     export = add("export", "Export entries as JSON, CSV, iCal, ledger or Markdown.",
                  parents=[range_opts, filter_opts, sheet_opts, format_opts], func=cmd_export)
     export.add_argument("-o", "--output", metavar="FILE", help="write to a file instead of stdout")
+
+    dashboard = add("dashboard", "Open Hours & Feelings: your time and check-ins as a web page.",
+                    aliases=["dash"], parents=[range_opts], func=cmd_dashboard)
+    dashboard.add_argument("--sheet", metavar="NAME", help="only this sheet (default: every sheet)")
+    dashboard.add_argument("-o", "--output", metavar="FILE",
+                           help="where to write the page (default: dashboard.html in the data dir)")
+    dashboard.add_argument("--no-open", action="store_true", help="write the page without opening it")
+    dashboard.add_argument("--demo", action="store_true", help="show the page with built-in sample data")
 
     import_cmd = add("import", "Import entries from JSON, JSONL or CSV.", func=cmd_import)
     import_cmd.add_argument("file", nargs="?", metavar="FILE", help="file to read (default: stdin)")

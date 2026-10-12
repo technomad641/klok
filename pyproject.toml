@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 # by an unrelated, empty placeholder package. The installed command is
 # still plain `klok` - see [project.scripts] below.
 name = "klok-cli"
-version = "1.0.1"
+version = "1.1.0"
 description = "A batteries-included command-line time tracker with a plaintext backend."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -39,3 +39,7 @@ Issues = "https://github.com/technomad641/klok/issues"
 
 [tool.setuptools.packages.find]
 include = ["klok*"]
+
+[tool.setuptools.package-data]
+# The `klok dashboard` page, filled in with your data at run time.
+klok = ["dashboard.html"]
