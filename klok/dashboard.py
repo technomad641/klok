@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from klok import __version__
-from klok.mindful import BREATHING_TAG, MEDITATION_TAG, Checkin
+from klok.mindful import Checkin
 from klok.model import Frame
+from klok.pairing import frame_at, is_practice
 
 TEMPLATE = "dashboard.html"
 DATA_MARKER = "/*KLOK_DATA*/null"
-PRACTICE_TAGS = {BREATHING_TAG, MEDITATION_TAG}
 NO_PROJECT = "(no project)"
 
 
@@ -27,22 +27,6 @@ def template() -> str:
 
 def _iso(moment: datetime) -> str:
     return moment.isoformat(timespec="seconds")
-
-
-def is_practice(frame: Frame, practice_sheet: str = "") -> bool:
-    """Breathing and sitting sessions, however they were recorded."""
-    return bool(PRACTICE_TAGS.intersection(frame.tags)) or (
-        bool(practice_sheet) and frame.sheet == practice_sheet)
-
-
-def frame_at(frames: List[Frame], moment: datetime, now: datetime) -> Optional[Frame]:
-    """The frame that was running at ``moment``; the latest-started one wins."""
-    found = None
-    for frame in frames:
-        if frame.start <= moment < frame.end_or(now):
-            if found is None or frame.start >= found.start:
-                found = frame
-    return found
 
 
 def _mean(values) -> Optional[float]:
