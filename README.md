@@ -105,6 +105,35 @@ klok checkin --mood 4 --energy 3 --stress 2
 klok mindful :month          # sessions, time, averages, streaks
 ```
 
+## What drains you, what lifts you
+
+The thing no other tracker does: klok joins *how you felt* to *what you were
+doing*. Rate a day's blocks in about twenty seconds, then let klok tell you which
+work costs you energy and which gives it back — from your own private, local data,
+no cloud and no screen surveillance.
+
+```sh
+klok review                  # walk today's blocks, rate each 1–5 (a digit, then Enter)
+klok stop --felt 4           # or rate a block the moment you stop it
+klok digest :week            # what drained vs lifted you, in plain language
+klok digest :month -o energy.txt   # write a shareable copy
+```
+
+`klok review` asks one quick energy rating per tracked block (blank skips, `b`
+goes back, `q` quits), so the data stays cheap to keep. `klok digest` then reports
+the projects and tags whose energy sits clearly above or below your average, and
+only once there's enough rated data to trust it — the footer always says how many
+blocks it's working from.
+
+```text
++reviews drains you
+  averages 1.3 points below your overall energy over 7 blocks
+deep work lifts you
+  averages 0.9 points above your overall energy over 11 blocks
+
+Based on 34 rated blocks across 12 days. Rate more with `klok review` for sharper results.
+```
+
 ## A web dashboard
 
 ```sh

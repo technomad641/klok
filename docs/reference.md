@@ -274,11 +274,39 @@ klok mood --json
 klok checkin --delete @            # or by id prefix
 ```
 
-Three optional 1–5 scales (mood, energy, stress) and a free-text note. `klok
-mood` renders each scale as a sparkline with its average, and — once there are
-enough days to compare — notes how mood sat on your busier days versus your
-lighter ones. That is an observation about two averages, not a claim about
-cause.
+Three optional 1–5 scales (mood, energy, stress) and a free-text note. A bare
+leading number is an energy shorthand, so `klok checkin 4` is `klok checkin
+--energy 4`. `klok mood` renders each scale as a sparkline with its average,
+and — once there are enough days to compare — notes how mood sat on your busier
+days versus your lighter ones. That is an observation about two averages, not a
+claim about cause.
+
+#### Energy review and digest
+
+```sh
+klok review                        # walk today's blocks, rate each 1–5
+klok review :week --all-sheets     # a wider range, every sheet
+klok review --redo                 # re-walk and replace ratings already set
+klok stop --felt 4                 # rate a block as you stop it
+klok digest :week                  # what drained vs lifted you
+klok digest :month -o energy.txt   # write a plain, shareable copy
+```
+
+`klok review` walks each tracked block in the range that has no energy rating yet
+(active sheet by default; `--all-sheets` widens it) and asks for a single 1–5
+rating per block: a digit then Enter records it, a blank line skips, `b` steps
+back to re-rate the previous block, and `q` (or end-of-input) stops. Practice
+sessions and a still-running frame are left out. Each rating is one energy
+check-in stamped at the block's start, so the timestamp join ties it to that
+block; re-rating (via `b` or `--redo`) replaces the rating rather than adding a
+second one.
+
+`klok digest` joins those ratings to their blocks and reports the projects and
+tags whose mean energy sits at least half a point above or below your overall
+average, over at least five rated blocks — ranked by effect size, most draining
+first. Below that bar it stays quiet and says so; the footer always states how
+many rated blocks and days it drew on, so the readout never claims more than the
+data supports.
 
 #### How the practice is going
 
