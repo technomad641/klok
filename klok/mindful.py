@@ -369,6 +369,30 @@ class CheckinStore:
         return [item for item in self.items
                 if (start is None or item.at >= start) and (end is None or item.at < end)]
 
+    def energy_at(self, start: datetime, end: datetime) -> Optional[Checkin]:
+        """The energy-bearing check-in inside ``[start, end)``, latest wins.
+
+        "Energy-bearing" means ``energy is not None``; a mood- or stress-only
+        check-in in the same interval is ignored, so it never masks a block
+        that has not actually been rated for energy.
+        """
+        found = [item for item in self.items
+                 if item.energy is not None and start <= item.at < end]
+        return found[-1] if found else None
+
+    def replace(self, old: Optional[Checkin], new: Checkin) -> Checkin:
+        """Re-rate in place: drop ``old`` (if any) then add ``new``, one save.
+
+        ``CheckinStore`` has no update, so re-rating a block is remove-then-add;
+        doing both before a single atomic save keeps the file consistent and
+        never leaves a duplicate energy check-in behind.
+        """
+        if old is not None:
+            self._items = [item for item in self.items if item.id != old.id]
+        self.add(new)
+        self.save()
+        return new
+
 
 # ----------------------------------------------------------------- reporting
 def sparkline(values) -> str:

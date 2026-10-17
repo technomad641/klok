@@ -9,6 +9,23 @@ from pathlib import Path
 from klok.cli import main
 
 
+def scripted_input(answers):
+    """A stand-in for the ``Context`` input seam that replays a script.
+
+    Each prompt returns the next scripted answer; once they run out it returns
+    ``None`` the way a real read does at EOF, so a `review` walk ends cleanly.
+    """
+    pending = iter(answers)
+
+    def ask(prompt):
+        try:
+            return next(pending)
+        except StopIteration:
+            return None
+
+    return ask
+
+
 class CliTestCase(unittest.TestCase):
     """Drives the real entry point and reads what a user would see."""
 
@@ -20,11 +37,12 @@ class CliTestCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.home, ignore_errors=True)
 
-    def run_klok(self, *args, clock=None):
+    def run_klok(self, *args, clock=None, answers=None):
         argv = ["--home", str(self.home), "--no-color", "--now", clock or self.clock] + [str(a) for a in args]
+        ask = scripted_input(answers) if answers is not None else None
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            code = main(argv)
+            code = main(argv, ask=ask)
         return code, out.getvalue() + err.getvalue()
 
     def assertOk(self, *args, **kwargs):
@@ -540,6 +558,191 @@ class MindfulnessTests(CliTestCase):
         self.assertOk("config", "set", "mindful.break_after", "")
         self.assertOk("start", "acme", "--at", "-3h")
         self.assertNotIn("klok breathe", self.assertOk("status"))
+
+
+class CheckinShorthandTests(CliTestCase):
+    """`klok checkin 4`, `klok stop --felt` and the flag forms coexisting."""
+
+    def energies(self):
+        """Every energy check-in, as (energy, HH:MM) pairs in time order."""
+        path = self.home / "checkins.jsonl"
+        if not path.exists():
+            return []
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            item = json.loads(line)
+            if item.get("energy") is not None:
+                out.append((item["energy"], item["at"][11:16]))
+        return sorted(out, key=lambda pair: pair[1])
+
+    def test_bare_integer_sets_energy(self):
+        output = self.assertOk("checkin", "4")
+        self.assertIn("energy 4", output)
+        self.assertEqual([e for e, _ in self.energies()], [4])
+
+    def test_flag_forms_still_work_alongside_the_positional(self):
+        # The positional shorthand must not have broken --mood/--energy/--stress.
+        self.assertOk("checkin", "--mood", "4")
+        self.assertOk("checkin", "--energy", "2", "--mood", "3")
+        self.assertEqual([e for e, _ in self.energies()], [2])
+
+    def test_bare_integer_keeps_the_rest_as_a_note(self):
+        self.assertOk("checkin", "4", "after", "lunch")
+        output = self.assertOk("mood", ":day")
+        self.assertIn("after lunch", output)
+
+    def test_leading_dash_value_is_not_swallowed_as_the_positional(self):
+        # `--energy 2 --mood 3` keeps parsing; words stays empty, no crash.
+        self.assertOk("checkin", "--energy", "2", "--mood", "3")
+        rows = json.loads(self.assertOk("mood", ":day", "--json"))
+        self.assertEqual(rows[0]["energy"], 2)
+        self.assertEqual(rows[0]["mood"], 3)
+
+    def test_non_integer_first_word_is_a_note_not_a_rating(self):
+        code, output = self.run_klok("checkin", "just", "a", "note")
+        self.assertEqual(code, 1)
+        self.assertIn("at least one", output)
+
+    def test_stop_felt_records_an_energy_checkin_at_the_block_start(self):
+        self.assertOk("start", "acme", "--at", "09:00")
+        output = self.assertOk("stop", "--at", "10:30", "--felt", "4")
+        self.assertIn("energy 4", output)
+        self.assertEqual(self.energies(), [(4, "09:00")])
+
+    def test_stop_felt_rejects_an_out_of_range_value_without_stopping(self):
+        self.assertOk("start", "acme", "--at", "09:00")
+        code, output = self.run_klok("stop", "--at", "10:30", "--felt", "9")
+        self.assertEqual(code, 1)
+        self.assertIn("between 1 and 5", output)
+        # The frame was not stopped and no check-in was written.
+        self.assertEqual(self.energies(), [])
+        payload = json.loads(self.assertOk("status", "--json"))
+        self.assertTrue(payload["running"])
+
+
+class ReviewTests(CliTestCase):
+    """The end-of-day `klok review` energy ritual."""
+
+    def energies(self):
+        path = self.home / "checkins.jsonl"
+        if not path.exists():
+            return []
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            item = json.loads(line)
+            out.append(item)
+        return sorted(out, key=lambda item: item["at"])
+
+    def two_blocks(self):
+        self.assertOk("track", "09:00", "to", "11:00", "acme", "+deep")
+        self.assertOk("track", "11:00", "to", "11:20", "email")
+
+    def test_happy_path_rates_each_block_at_its_start(self):
+        self.two_blocks()
+        output = self.assertOk("review", answers=["4", "2"])
+        self.assertIn("acme +deep", output)
+        self.assertIn("(09:00-11:00)", output)
+        self.assertIn("Rated 2 blocks", output)
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(4, "09:00"), (2, "11:00")])
+
+    def test_blank_line_skips_a_block(self):
+        self.two_blocks()
+        self.assertOk("review", answers=["", "3"])
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(3, "11:00")])
+
+    def test_q_quits_the_walk(self):
+        self.two_blocks()
+        output = self.assertOk("review", answers=["4", "q"])
+        self.assertIn("Rated 1 block.", output)
+        energies = [c["energy"] for c in self.energies()]
+        self.assertEqual(energies, [4])
+
+    def test_back_re_rates_without_duplicating(self):
+        self.two_blocks()
+        # Rate block 0 as 3, step back from block 1, re-rate block 0 as 5, skip block 1.
+        self.assertOk("review", answers=["3", "b", "5", ""])
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(5, "09:00")])
+
+    def test_redo_replaces_an_existing_rating(self):
+        self.two_blocks()
+        self.assertOk("review", answers=["4", "2"])
+        self.assertOk("review", "--redo", answers=["1", "5"])
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(1, "09:00"), (5, "11:00")])
+
+    def test_already_rated_blocks_are_skipped_without_redo(self):
+        self.two_blocks()
+        self.assertOk("review", answers=["4"])  # rate only block 0
+        # A second plain review only offers the still-unrated block.
+        output = self.assertOk("review", answers=["3"])
+        self.assertIn("email", output)
+        self.assertNotIn("acme +deep", output)
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(4, "09:00"), (3, "11:00")])
+
+    def test_mood_only_checkin_does_not_mask_an_unrated_block(self):
+        self.assertOk("track", "09:00", "to", "11:00", "acme")
+        # A mood-only check-in inside the block has energy None.
+        self.assertOk("checkin", "--mood", "4", "--at", "10:00")
+        output = self.assertOk("review", answers=["3"])
+        self.assertIn("acme", output)
+        self.assertIn("Rated 1 block", output)
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()
+                    if c["energy"] is not None]
+        self.assertEqual(energies, [(3, "09:00")])
+
+    def test_practice_and_running_frames_are_left_out(self):
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        # A practice session (meditation tag) on the default work sheet.
+        self.assertOk("track", "10:00", "to", "10:20", "mindfulness", "+meditation")
+        # A still-running frame.
+        self.assertOk("start", "later", "--at", "12:00")
+        output = self.assertOk("review", answers=["4", "4", "4"])
+        self.assertIn("acme", output)
+        self.assertNotIn("mindfulness", output)
+        self.assertNotIn("later", output)
+        self.assertIn("Rated 1 block", output)
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(4, "09:00")])
+
+    def test_default_scope_is_the_active_sheet_only(self):
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        self.assertOk("track", "10:00", "to", "11:00", "sideproj", "--sheet", "personal")
+        # Plain review walks the active sheet (default) only.
+        output = self.assertOk("review", answers=["4"])
+        self.assertIn("acme", output)
+        self.assertNotIn("sideproj", output)
+        self.assertEqual([c["energy"] for c in self.energies()], [4])
+
+    def test_all_sheets_widens_the_scope(self):
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        self.assertOk("track", "10:00", "to", "11:00", "sideproj", "--sheet", "personal")
+        output = self.assertOk("review", "--all-sheets", answers=["4", "5"])
+        self.assertIn("acme", output)
+        self.assertIn("sideproj", output)
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(4, "09:00"), (5, "10:00")])
+
+    def test_invalid_answer_reprompts_the_same_block(self):
+        self.two_blocks()
+        # "9" is out of range: re-prompt the same block, then accept 4.
+        output = self.assertOk("review", answers=["9", "4", "2"])
+        self.assertIn("between 1 and 5", output)
+        energies = [(c["energy"], c["at"][11:16]) for c in self.energies()]
+        self.assertEqual(energies, [(4, "09:00"), (2, "11:00")])
+
+    def test_nothing_to_review_is_a_clean_no_op(self):
+        output = self.assertOk("review")
+        self.assertIn("No blocks to review", output)
 
 
 class DashboardTests(CliTestCase):

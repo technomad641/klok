@@ -20,6 +20,7 @@ from klok.mindful import (BREATHING_TAG, MEDITATION_TAG, PATTERNS, Checkin,
                           parse_pattern, pattern_phases, rounds_for, sit_plan,
                           sparkline, streak)
 from klok.model import Frame, normalise_tags
+from klok.pairing import is_practice
 from klok.report import (Renderer, by_day, by_project, by_sheet, by_tag,
                          render_day_chart, render_gaps, render_log,
                          render_punchcard, render_report, render_summary,
@@ -38,11 +39,25 @@ TIME_OPTIONS = {"-a", "--at", "--from", "--to", "--start", "--stop", "--now",
                 "--for", "--interval-bell", "--warmup"}
 
 
+def _default_ask(prompt: str):
+    """The real input seam: one line from the user, or ``None`` at EOF.
+
+    ``review`` reads through this rather than calling ``input`` directly, the
+    same spirit as the ``sleep=``/``clock=`` seams in ``focus``/``mindful``,
+    so the in-process test suite can feed scripted answers with no real TTY.
+    """
+    try:
+        return input(prompt)
+    except EOFError:
+        return None
+
+
 class Context:
     """Everything a command needs: config, store, clock and renderer."""
 
-    def __init__(self, args):
+    def __init__(self, args, ask=None):
         self.config = Config(args.home)
+        self.ask = ask or _default_ask
         self.store = Store(self.config)
         self.now = parse_datetime(args.now) if args.now else now_local()
         color_mode = "never" if args.no_color else (args.color or self.config.get("general.color", "auto"))
@@ -198,6 +213,7 @@ def cmd_start(ctx: Context) -> int:
 
 def cmd_stop(ctx: Context) -> int:
     args = ctx.args
+    felt = check_score("felt", getattr(args, "felt", None))  # validate before stopping
     at = resolve_time(ctx, args.at)
     sheet = None if args.all else ctx.sheet_filter()
     stopped = stop_running(ctx, at, note=args.note or "", sheet=sheet)
@@ -205,10 +221,17 @@ def cmd_stop(ctx: Context) -> int:
         ctx.echo("Nothing is running.")
         return 1
     ctx.store.save("stop")
+    if felt is not None:
+        store = CheckinStore(ctx.config)
+        for frame in stopped:
+            store.replace(store.energy_at(frame.start, frame.end_or(ctx.now)),
+                          Checkin(at=frame.start, energy=felt))
     for frame in stopped:
         ctx.echo("Stopped %s after %s [%s]" % (describe(ctx, frame),
                                                format_duration(frame.duration(ctx.now)),
                                                ctx.term.paint(frame.id, "grey")))
+    if felt is not None:
+        ctx.echo("Noted energy %d for %s." % (felt, "it" if len(stopped) == 1 else "them"))
     return 0
 
 
@@ -1173,9 +1196,14 @@ def cmd_checkin(ctx: Context) -> int:
                  % (removed.id, removed.at.strftime("%Y-%m-%d %H:%M")))
         return 0
 
+    words = list(args.words)
     mood = check_score("mood", args.mood)
     energy = check_score("energy", args.energy)
     stress = check_score("stress", args.stress)
+    # `klok checkin 4` shorthand: a bare leading integer is an energy rating,
+    # as long as --energy was not also given.  Everything else stays the note.
+    if energy is None and words and re.fullmatch(r"\d+", words[0]):
+        energy = check_score("energy", words.pop(0))
     if mood is None and energy is None and stress is None and sys.stdin.isatty():
         mood = check_score("mood", _ask("Mood 1-5 (1 low, 5 good)"))
         energy = check_score("energy", _ask("Energy 1-5"))
@@ -1184,7 +1212,7 @@ def cmd_checkin(ctx: Context) -> int:
         raise MindfulError("give at least one of --mood, --energy or --stress")
 
     checkin = Checkin(at=resolve_time(ctx, args.at), mood=mood, energy=energy, stress=stress,
-                      note=" ".join(args.words).strip(), tags=normalise_tags(args.tag or []))
+                      note=" ".join(words).strip(), tags=normalise_tags(args.tag or []))
     store.add(checkin)
     store.save()
     parts = ["%s %d" % (name, value) for name, value in
@@ -1325,6 +1353,69 @@ def cmd_mindful(ctx: Context) -> int:
     return 0
 
 
+def cmd_review(ctx: Context) -> int:
+    """Walk the range's tracked blocks and rate each one's energy, 1-5.
+
+    One block at a time: a digit then Enter records it, a blank line skips,
+    ``b`` steps back to re-rate the previous block, ``q`` (or EOF) stops.  By
+    default it walks the active sheet only and the blocks that have no energy
+    rating yet; ``--all-sheets`` widens the scope and ``--redo`` re-walks the
+    already-rated ones too.  Practice sessions and a still-running frame are
+    left out.  Each rating is one energy ``Checkin`` stamped at the block's
+    start instant, so the timestamp join associates it with that block.
+    """
+    start, end = ctx.range_of(":day")
+    sheet = ctx.sheet_filter()
+    practice = ctx.config.get("mindful.sheet", "wellbeing")
+    frames = ctx.store.select(start, end, sheet=sheet, now=ctx.now)
+    blocks = sorted((frame for frame in frames
+                     if not frame.running and not is_practice(frame, practice)),
+                    key=lambda frame: frame.start)
+    store = CheckinStore(ctx.config)
+    redo = ctx.args.redo
+    pending = [frame for frame in blocks
+               if redo or store.energy_at(frame.start, frame.end_or(ctx.now)) is None]
+    if not pending:
+        if blocks:
+            ctx.echo("Every block here is already rated. Use `klok review --redo` to re-rate.")
+        else:
+            ctx.echo("No blocks to review in this range.")
+        return 0
+
+    rated = 0
+    index = 0
+    while index < len(pending):
+        frame = pending[index]
+        current = store.energy_at(frame.start, frame.end_or(ctx.now))
+        marker = ctx.term.paint("  [energy %d]" % current.energy, "grey") if current else ""
+        ctx.echo("%s  %s  (%s-%s)%s" % (
+            frame.label(), format_duration(frame.duration(ctx.now)),
+            ctx.renderer.fmt_time(frame.start), ctx.renderer.fmt_time(frame.stop), marker))
+        answer = ctx.ask("  Energy 1-5 (Enter skips, b back, q quit): ")
+        if answer is None:
+            break
+        answer = answer.strip().lower()
+        if answer == "":
+            index += 1
+            continue
+        if answer == "q":
+            break
+        if answer == "b":
+            index = max(0, index - 1)
+            continue
+        try:
+            value = check_score("energy", answer)
+        except MindfulError as exc:
+            ctx.echo("  %s" % exc)
+            continue
+        store.replace(current, Checkin(at=frame.start, energy=value))
+        rated += 1
+        index += 1
+
+    ctx.echo("Rated %d block%s." % (rated, "" if rated == 1 else "s"))
+    return 0
+
+
 # ------------------------------------------------------------------- checks
 def cmd_check(ctx: Context) -> int:
     problems = []
@@ -1361,7 +1452,7 @@ _klok_completions() {
   local commands="start stop cancel status restart switch track add stretch edit annotate tag untag
 rename move lengthen shorten fill join split delete undo log summary report chart gaps stats projects
 tags sheet sheets archive export import config where timer pomodoro breathe meditate checkin mood
-mindful check completion version"
+mindful review check completion version"
   COMPREPLY=($(compgen -W "$commands" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
 complete -F _klok_completions klok
@@ -1373,7 +1464,7 @@ _klok() {
   commands=(start stop cancel status restart switch track add stretch edit annotate tag untag rename
 move lengthen shorten fill join split delete undo log summary report chart gaps stats projects tags
 sheet sheets archive export import config where timer pomodoro breathe meditate checkin mood
-mindful check completion version)
+mindful review check completion version)
   _describe 'klok command' commands
 }
 compdef _klok klok
@@ -1382,7 +1473,7 @@ compdef _klok klok
 for cmd in start stop cancel status restart switch track add stretch edit annotate tag untag rename \\
     move lengthen shorten fill join split delete undo log summary report chart gaps stats projects \\
     tags sheet sheets archive export import config where timer pomodoro breathe meditate \\
-    checkin mood mindful check completion version
+    checkin mood mindful review check completion version
     complete -c klok -n __fish_use_subcommand -a $cmd
 end
 """,
@@ -1564,6 +1655,7 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("-a", "--at", metavar="TIME", help="stop at this time (e.g. 17:30, -5m)")
     stop.add_argument("-n", "--note", metavar="TEXT", help="append an annotation while stopping")
     stop.add_argument("--all", action="store_true", help="stop running entries on every sheet")
+    stop.add_argument("--felt", metavar="1-5", help="also record how the stretch felt, as an energy check-in")
 
     add("cancel", "Discard the running entry without recording it.",
         aliases=["abort"], parents=[sheet_opts], func=cmd_cancel)
@@ -1826,6 +1918,11 @@ def build_parser() -> argparse.ArgumentParser:
                       parents=[range_opts, sheet_opts], func=cmd_mindful)
     mindful_cmd.add_argument("--no-chart", action="store_true", help="skip the per-day chart")
 
+    review_cmd = add("review", "Rate each of a day's tracked blocks for energy, one at a time.",
+                     parents=[range_opts, sheet_opts], func=cmd_review)
+    review_cmd.add_argument("--redo", action="store_true",
+                            help="re-walk blocks that are already rated and replace their rating")
+
     current_group[0] = "Other"
     add("check", "Look for overlaps and other suspicious entries.", aliases=["sanity", "doctor"],
         func=cmd_check)
@@ -1840,7 +1937,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv=None) -> int:
+def main(argv=None, ask=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
         argv = ["status"]
@@ -1850,7 +1947,7 @@ def main(argv=None) -> int:
         parser.print_help()
         return 1
     try:
-        ctx = Context(args)
+        ctx = Context(args, ask=ask)
         return args.func(ctx) or 0
     except (StoreError, TimeParseError, ValueError, KeyError) as exc:
         return die(str(exc))
