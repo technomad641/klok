@@ -862,5 +862,47 @@ class HelpAndErrorsTests(CliTestCase):
         self.assertNotIn("Nothing tracked yet", output)
 
 
+class DigestTests(CliTestCase):
+    """`klok digest`: project/tag drain-vs-lift from the energy ratings."""
+
+    def ten_rated_blocks(self):
+        # Five draining acme blocks, five lifting writing blocks, same day.
+        for hour in range(1, 6):
+            self.assertOk("track", "0%d:00" % hour, "to", "0%d:45" % hour, "acme", "+reviews")
+        for hour in range(1, 6):
+            self.assertOk("track", "1%d:00" % hour, "to", "1%d:45" % hour, "writing", "+deep")
+        # review walks in start order: the five acme blocks, then the five writing blocks.
+        self.assertOk("review", answers=["2"] * 5 + ["5"] * 5)
+
+    def test_digest_surfaces_drain_and_lift(self):
+        self.ten_rated_blocks()
+        output = self.assertOk("digest")
+        self.assertIn("acme drains you", output)
+        self.assertIn("writing lifts you", output)
+        self.assertIn("+reviews drains you", output)
+        self.assertIn("Based on 10 rated blocks across 1 day.", output)
+
+    def test_digest_with_no_ratings_says_so(self):
+        output = self.assertOk("digest")
+        self.assertIn("Nothing rated yet", output)
+        self.assertIn("Based on 0 rated blocks across 0 days.", output)
+
+    def test_too_few_blocks_report_no_pattern(self):
+        self.assertOk("track", "09:00", "to", "10:00", "acme")
+        self.assertOk("review", answers=["5"])
+        output = self.assertOk("digest")
+        self.assertIn("No clear pattern yet", output)
+        self.assertIn("Based on 1 rated block across 1 day.", output)
+
+    def test_digest_writes_a_plain_file(self):
+        self.ten_rated_blocks()
+        path = self.home / "digest.txt"
+        self.assertOk("digest", "-o", str(path))
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("drains you", text)
+        self.assertIn("Based on 10 rated blocks", text)
+        self.assertNotIn("\x1b[", text)  # no terminal colour codes in the shared copy
+
+
 if __name__ == "__main__":
     unittest.main()

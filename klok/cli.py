@@ -20,7 +20,8 @@ from klok.mindful import (BREATHING_TAG, MEDITATION_TAG, PATTERNS, Checkin,
                           parse_pattern, pattern_phases, rounds_for, sit_plan,
                           sparkline, streak)
 from klok.model import Frame, normalise_tags
-from klok.pairing import is_practice
+from klok.insights import drain_findings
+from klok.pairing import frame_at, is_practice
 from klok.report import (Renderer, by_day, by_project, by_sheet, by_tag,
                          render_day_chart, render_gaps, render_log,
                          render_punchcard, render_report, render_summary,
@@ -1416,6 +1417,70 @@ def cmd_review(ctx: Context) -> int:
     return 0
 
 
+def cmd_digest(ctx: Context) -> int:
+    """What your energy ratings add up to: which work drains or lifts you.
+
+    Reads the frames and energy check-ins in the range, joins each rating to
+    the block it falls in, and reports the projects and tags whose energy sits
+    clearly above or below your overall average.  It only reports a pattern
+    once there is enough data to trust it, so an honest footer always says how
+    many rated blocks it is working from.  ``-o`` writes the same text to a
+    file to share.
+    """
+    start, end = ctx.range_of(":week")
+    sheet = ctx.sheet_filter()
+    now = min(ctx.now, end - timedelta(seconds=1))
+    frames = ctx.store.select(start, end, sheet=sheet, now=now)
+    checkins = CheckinStore(ctx.config).select(start, end)
+
+    findings = drain_findings(frames, checkins, now)
+
+    # Rated blocks and the days they span, joined the same way insights does.
+    rated = {}
+    for checkin in checkins:
+        if checkin.energy is None:
+            continue
+        frame = frame_at(frames, checkin.at, now)
+        if frame is not None:
+            rated[frame.start] = frame
+    block_count = len(rated)
+    day_count = len({frame.start.date() for frame in rated.values()})
+
+    header = "Energy digest  %s to %s" % (
+        start.date().isoformat(), (end - timedelta(seconds=1)).date().isoformat())
+    body = []  # (kind, text): kind "head" is a finding headline, "plain" is as-is
+    if findings:
+        for finding in findings:
+            body.append(("head", finding.headline))
+            body.append(("plain", "  %s" % finding.detail))
+    elif block_count:
+        body.append(("plain", "No clear pattern yet. Keep rating blocks with `klok review`;"))
+        body.append(("plain", "a project or tag needs several rated blocks before it shows up here."))
+    else:
+        body.append(("plain", "Nothing rated yet. Rate a day's blocks with `klok review` and come back."))
+    footer = "Based on %d rated block%s across %d day%s." % (
+        block_count, "" if block_count == 1 else "s",
+        day_count, "" if day_count == 1 else "s")
+    if block_count:
+        footer += " Rate more with `klok review` for sharper results."
+
+    def render(colored: bool) -> str:
+        paint = ctx.term.paint if colored else (lambda text, *styles: text)
+        out = [paint(header, "bold"), ""]
+        for kind, text in body:
+            out.append(paint(text, "bold") if kind == "head" else text)
+        out += ["", paint(footer, "grey")]
+        return "\n".join(out)
+
+    if ctx.args.output:
+        with open(ctx.args.output, "w", encoding="utf-8") as handle:
+            handle.write(render(False) + "\n")
+        ctx.echo("Wrote the digest to %s" % ctx.args.output)
+    else:
+        print(render(True))
+    return 0
+
+
 # ------------------------------------------------------------------- checks
 def cmd_check(ctx: Context) -> int:
     problems = []
@@ -1452,7 +1517,7 @@ _klok_completions() {
   local commands="start stop cancel status restart switch track add stretch edit annotate tag untag
 rename move lengthen shorten fill join split delete undo log summary report chart gaps stats projects
 tags sheet sheets archive export import config where timer pomodoro breathe meditate checkin mood
-mindful review check completion version"
+mindful review digest check completion version"
   COMPREPLY=($(compgen -W "$commands" -- "${COMP_WORDS[COMP_CWORD]}"))
 }
 complete -F _klok_completions klok
@@ -1464,7 +1529,7 @@ _klok() {
   commands=(start stop cancel status restart switch track add stretch edit annotate tag untag rename
 move lengthen shorten fill join split delete undo log summary report chart gaps stats projects tags
 sheet sheets archive export import config where timer pomodoro breathe meditate checkin mood
-mindful review check completion version)
+mindful review digest check completion version)
   _describe 'klok command' commands
 }
 compdef _klok klok
@@ -1473,7 +1538,7 @@ compdef _klok klok
 for cmd in start stop cancel status restart switch track add stretch edit annotate tag untag rename \\
     move lengthen shorten fill join split delete undo log summary report chart gaps stats projects \\
     tags sheet sheets archive export import config where timer pomodoro breathe meditate \\
-    checkin mood mindful review check completion version
+    checkin mood mindful review digest check completion version
     complete -c klok -n __fish_use_subcommand -a $cmd
 end
 """,
@@ -1922,6 +1987,11 @@ def build_parser() -> argparse.ArgumentParser:
                      parents=[range_opts, sheet_opts], func=cmd_review)
     review_cmd.add_argument("--redo", action="store_true",
                             help="re-walk blocks that are already rated and replace their rating")
+
+    digest_cmd = add("digest", "What your energy ratings add up to: what drains or lifts you.",
+                     parents=[range_opts, sheet_opts], func=cmd_digest)
+    digest_cmd.add_argument("-o", "--output", metavar="FILE",
+                            help="write the digest to a file instead of stdout")
 
     current_group[0] = "Other"
     add("check", "Look for overlaps and other suspicious entries.", aliases=["sanity", "doctor"],
