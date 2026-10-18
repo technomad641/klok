@@ -29,7 +29,7 @@ JSONL file and depends on nothing but the Python standard library.
   `2 hours ago`.
 - **Correct under pressure.** Atomic writes, cross-platform advisory file
   locking, and 100 levels of `undo`.
-- **Tested and portable.** 170 tests; CI runs the full suite on Linux, macOS and
+- **Tested and portable.** 222 tests; CI runs the full suite on Linux, macOS and
   Windows across Python 3.9–3.13.
 - **A point of view.** Mood/energy/stress check-ins, breathing and meditation
   are first-class — because how time felt is worth as much as where it went.
@@ -142,6 +142,10 @@ klok dashboard :month         # any range the reports accept
 klok dashboard --demo         # try it with sample data first
 ```
 
+<p align="center">
+  <img src="docs/images/dashboard.jpg" alt="The Hours &amp; Feelings dashboard: an editorial hero reading 'Where your time went — and how it felt', with tracked-hours, biggest-slice, average-mood and check-in tiles" width="760">
+</p>
+
 **Hours & Feelings** reads `frames.jsonl` and `checkins.jsonl` and shows not only
 where time went but how it felt, joining each check-in to whatever you were
 tracking at that moment. It has an energy–time map (every project placed by hours
@@ -182,8 +186,9 @@ Everything lives in one directory (`$KLOK_HOME`, else `$XDG_DATA_HOME/klok`, els
 cd klok && PYTHONPATH=. python3 -m unittest discover -s tests -t .
 ```
 
-170 tests cover the time parser, the store (undo, locking, overlaps, gaps), the
-breathing and sitting timers, the exporters, and every command end to end.
+222 tests cover the time parser, the store (undo, locking, overlaps, gaps), the
+breathing and sitting timers, the exporters, the energy review/digest join, and
+every command end to end.
 
 ## Scope
 
