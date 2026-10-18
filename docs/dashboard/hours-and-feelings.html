@@ -21,7 +21,7 @@
   --surface-2:  rgba(238,235,227,.78);   /* inset / track */
   --ink:        #26231c;   /* primary text (warm near-black) */
   --ink-2:      #595345;   /* secondary */
-  --muted:      #8a8372;   /* axis / captions */
+  --muted:      #6b6452;   /* axis / captions (AA on the parchment ground) */
   --line:       rgba(92,80,58,.20);      /* hairline */
   --line-2:     rgba(92,80,58,.32);
   --accent:     #cf1d84;   /* the magenta pop — chrome / magnitude / highlight */
@@ -143,7 +143,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible{ outline:2px sol
 section{ margin-top:40px; }
 .sec-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:14px; counter-increment:sec; }
 .sec-head h2{ font-size:clamp(22px,3vw,28px); }
-.sec-head h2::before{ content:counter(sec,upper-roman) "\00a0\00a0"; font-family:"IBM Plex Mono",monospace; font-weight:500; font-size:.5em; letter-spacing:.1em; color:var(--accent); vertical-align:.2em; }
+.sec-head h2::before{ content:counter(sec,upper-roman) "\00a0\00a0"; font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:.5em; letter-spacing:.1em; color:var(--accent-2); vertical-align:.2em; }
 .sec-head p{ margin:4px 0 0; color:var(--ink-2); font-size:13.5px; max-width:52ch; }
 .sec-head .hint{ font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); white-space:nowrap; }
 .card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:var(--shadow); backdrop-filter:blur(14px) saturate(1.15); -webkit-backdrop-filter:blur(14px) saturate(1.15); }
