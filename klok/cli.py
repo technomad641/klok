@@ -1370,7 +1370,8 @@ def cmd_review(ctx: Context) -> int:
     practice = ctx.config.get("mindful.sheet", "wellbeing")
     frames = ctx.store.select(start, end, sheet=sheet, now=ctx.now)
     blocks = sorted((frame for frame in frames
-                     if not frame.running and not is_practice(frame, practice)),
+                     if not frame.running and not is_practice(frame, practice)
+                     and frame.start < frame.end_or(ctx.now)),
                     key=lambda frame: frame.start)
     store = CheckinStore(ctx.config)
     redo = ctx.args.redo
@@ -1442,7 +1443,7 @@ def cmd_digest(ctx: Context) -> int:
             continue
         frame = frame_at(frames, checkin.at, now)
         if frame is not None:
-            rated[frame.start] = frame
+            rated[id(frame)] = frame  # by identity, matching insights._rated_blocks
     block_count = len(rated)
     day_count = len({frame.start.date() for frame in rated.values()})
 

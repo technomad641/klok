@@ -386,8 +386,21 @@ class CheckinStore:
         ``CheckinStore`` has no update, so re-rating a block is remove-then-add;
         doing both before a single atomic save keeps the file consistent and
         never leaves a duplicate energy check-in behind.
+
+        Re-rating changes the *energy* of a block, not the rest of a check-in.
+        When ``old`` carried a mood, stress, note or tags the user logged, those
+        are kept on ``new`` unless ``new`` sets its own, so a quick energy
+        re-rate never silently discards earlier entries.
         """
         if old is not None:
+            if new.mood is None:
+                new.mood = old.mood
+            if new.stress is None:
+                new.stress = old.stress
+            if not new.note:
+                new.note = old.note
+            if not new.tags:
+                new.tags = list(old.tags)
             self._items = [item for item in self.items if item.id != old.id]
         self.add(new)
         self.save()

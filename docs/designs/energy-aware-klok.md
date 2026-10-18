@@ -54,6 +54,7 @@ Keep it stdlib: every statistic is a count, a mean, or a simple delta. No numpy,
 ## Open Questions
 - Scale: reuse the existing 1 to 5 energy field only, or also quick mood? Recommend energy-only for the ritual to keep it one keystroke; richer check-ins stay on `klok checkin`.
 - In-the-moment vs retrospective: the review rates in hindsight, which is less accurate. Acceptable for v1; add optional on-stop prompts in the B phase and compare.
+- **Cross-sheet overlap (known limitation, from the pre-ship adversarial review).** Check-ins carry no sheet, while `review`/`stop --felt`/`digest` scope their frames to one sheet. When two blocks on different sheets overlap in time, a rating stamped at the shared instant is ambiguous: it can look like it rates the other sheet's block, and `--redo` can reassign it. After the field-preserving `replace` fix no user data is destroyed, so this is ambiguity, not loss. Proper fix (a sheet on the energy check-in, or a sheet-aware join) is a data-model change deferred past the first slice; concurrent cross-sheet overlapping blocks are the uncommon case this affects.
 - Should `klok review` nudge proactively (a one-line prompt in `klok status` after the day's last block)? Recommend a gentle nudge, off by default via config.
 - Minimum-data threshold and confidence model: start simple (n >= 5, report effect size) and tune once real data exists.
 

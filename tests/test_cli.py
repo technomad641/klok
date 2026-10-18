@@ -904,5 +904,49 @@ class DigestTests(CliTestCase):
         self.assertNotIn("\x1b[", text)  # no terminal colour codes in the shared copy
 
 
+class CheckinReplaceRegressionTests(CliTestCase):
+    """Re-rating a block must not destroy the rest of a check-in, and
+    degenerate (zero-duration) blocks must not be rated or duplicated."""
+
+    def checkins(self):
+        path = self.home / "checkins.jsonl"
+        if not path.exists():
+            return []
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                out.append(json.loads(line))
+        return sorted(out, key=lambda item: item["at"])
+
+    def test_stop_felt_keeps_a_logged_note(self):
+        # The flagship repro: a rich check-in inside the block, then `stop --felt`.
+        self.assertOk("start", "acme", "--at", "09:00")
+        self.assertOk("checkin", "4", "rough", "meeting", "--at", "09:30")
+        self.assertOk("stop", "--at", "11:00", "--felt", "2")
+        items = self.checkins()
+        self.assertEqual(len(items), 1)                 # no duplicate
+        self.assertEqual(items[0]["energy"], 2)         # energy re-rated
+        self.assertEqual(items[0]["note"], "rough meeting")  # note preserved
+
+    def test_review_redo_keeps_a_logged_note(self):
+        self.assertOk("track", "09:00", "to", "11:00", "acme")
+        self.assertOk("checkin", "3", "standup", "notes", "--at", "09:30")
+        self.assertOk("review", "--redo", answers=["5"])
+        items = self.checkins()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["energy"], 5)
+        self.assertEqual(items[0]["note"], "standup notes")
+
+    def test_zero_duration_block_is_skipped(self):
+        # A block that starts and stops at the same instant has an empty window;
+        # review must leave it out rather than orphan or duplicate a rating.
+        self.assertOk("start", "acme", "--at", "10:00")
+        self.assertOk("stop", "--at", "10:00")
+        output = self.assertOk("review", answers=["4"])
+        self.assertIn("No blocks to review", output)
+        self.assertEqual(self.checkins(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
