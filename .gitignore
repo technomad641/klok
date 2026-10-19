@@ -4,3 +4,10 @@ build/
 dist/
 *.egg-info/
 .venv/
+
+# archify diagram build artifacts
+.archify/
+docs/architecture/*.finalize.json
+docs/architecture/*.finalize-summary.json
+docs/architecture/*.browser-check.json
+docs/architecture/*.delivery.json

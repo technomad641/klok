@@ -147,6 +147,24 @@ klok mindful :month          # sessions, time, averages, streaks
 
 <br clear="all">
 
+## Architecture
+
+<div align="center">
+
+<a href="https://htmlpreview.github.io/?https://github.com/technomad641/klok/blob/main/docs/architecture/klok-architecture.html">
+  <img src="docs/images/klok-architecture.jpg" alt="klok architecture: You → CLI &amp; dispatch fans out to timeparse, report, formats, mindful, insights and dashboard; Context owns the Store; Frame records and the Store read/write frames.jsonl and undo.jsonl; CheckinStore reads/writes checkins.jsonl; pairing joins check-ins to the block that was running" width="840">
+</a>
+
+**[▶ Open the interactive diagram](https://htmlpreview.github.io/?https://github.com/technomad641/klok/blob/main/docs/architecture/klok-architecture.html)** — pan, zoom, toggle live motion, and click any box to jump to its source.
+
+</div>
+
+One entry point (`main`) builds a `Context`, dispatches to ~49 `cmd_*` functions, and
+leans on small single-purpose modules over one plaintext `Frame` store. The energy
+feature is just three more modules — `pairing` joins each check-in to the block that
+was running, `insights` ranks the drains and lifts, `dashboard` renders the page.
+Diagram generated from the source with [archify](https://github.com/tt-a1i/archify).
+
 ## Why it's built this way
 
 - **Zero runtime dependencies.** Pure stdlib, Python 3.9+. The whole thing is
